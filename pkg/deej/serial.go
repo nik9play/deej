@@ -36,6 +36,9 @@ type SerialIO struct {
 	sliderMoveConsumers []chan SliderMoveEvent
 }
 
+var ErrNoSerialPorts = errors.New("no serial ports found")
+var ErrAutoPortNotFound = errors.New("can't autodetect com port")
+
 // SliderMoveEvent represents a single slider move captured by deej
 type SliderMoveEvent struct {
 	SliderID     int
@@ -82,11 +85,11 @@ func (sio *SerialIO) Start() error {
 
 		if err != nil {
 			sio.logger.Errorw("Failed to enumarate serial ports")
-			return errors.New("serial: failed to enumarate serial ports")
+			return fmt.Errorf("serial: failed to enumarate serial ports: %w", err)
 		}
 		if len(ports) == 0 {
 			sio.logger.Errorw("No serial ports found!")
-			return errors.New("serial: no serial ports found")
+			return ErrNoSerialPorts
 		}
 		for _, port := range ports {
 			sio.logger.Debugf("Found port: %s", port.Name)
@@ -101,6 +104,10 @@ func (sio *SerialIO) Start() error {
 					break
 				}
 			}
+		}
+
+		if len(sio.comPort) == 0 {
+			return ErrAutoPortNotFound
 		}
 	} else {
 		sio.comPort = sio.deej.config.ConnectionInfo.COMPort
@@ -125,7 +132,7 @@ func (sio *SerialIO) Start() error {
 	if err != nil {
 		// might need a user notification here, TBD
 		sio.logger.Warnw("Failed to open serial connection", "error", err)
-		return fmt.Errorf("open serial connection: %w", err)
+		return err
 	}
 
 	sio.port.SetReadTimeout(time.Duration(3) * time.Second)

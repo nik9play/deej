@@ -9,6 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"go.bug.st/serial"
+
 	"github.com/omriharel/deej/pkg/deej/util"
 )
 
@@ -146,26 +148,33 @@ func (d *Deej) run() {
 		if err := d.serial.Start(); err != nil {
 			d.logger.Warnw("Failed to start first-time serial connection", "error", err)
 
+			d.logger.Warnw("Provided COM port seems wrong, notifying user and closing",
+				"comPort", d.config.ConnectionInfo.COMPort)
+
+			portErr, isPortErr := err.(*serial.PortError)
+			msg := ""
+
 			// If the port is busy, that's because something else is connected - notify and quit
-			if errors.Is(err, os.ErrPermission) {
-				d.logger.Warnw("Serial port seems busy, notifying user and closing",
-					"comPort", d.config.ConnectionInfo.COMPort)
+			if isPortErr {
+				if portErr.Code() == serial.PortBusy {
+					msg = "This serial port is busy, make sure to close any serial monitor or other deej instance."
+				}
 
-				d.notifier.Notify(fmt.Sprintf("Can't connect to %s!", d.config.ConnectionInfo.COMPort),
-					"This serial port is busy, make sure to close any serial monitor or other deej instance.")
-
-				d.signalStop()
+				if portErr.Code() == serial.PortNotFound {
+					msg = "This serial port doesn't exist, check your configuration and make sure it's set correctly."
+				}
 
 				// also notify if the COM port they gave isn't found, maybe their config is wrong
-			} else if errors.Is(err, os.ErrNotExist) {
-				d.logger.Warnw("Provided COM port seems wrong, notifying user and closing",
-					"comPort", d.config.ConnectionInfo.COMPort)
-
-				d.notifier.Notify(fmt.Sprintf("Can't connect to %s!", d.config.ConnectionInfo.COMPort),
-					"This serial port doesn't exist, check your configuration and make sure it's set correctly.")
-
-				d.signalStop()
+			} else if errors.Is(err, ErrNoSerialPorts) || errors.Is(err, ErrAutoPortNotFound) {
+				msg = "This serial port doesn't exist, check your configuration and make sure it's set correctly."
 			}
+
+			if len(msg) > 0 {
+				d.notifier.Notify(fmt.Sprintf("Can't connect to %s!", d.config.ConnectionInfo.COMPort),
+					msg)
+			}
+
+			d.signalStop()
 		}
 	}()
 
