@@ -7,12 +7,12 @@ import (
 
 	ole "github.com/go-ole/go-ole"
 	ps "github.com/mitchellh/go-ps"
-	wca "github.com/moutend/go-wca"
+	wca "github.com/moutend/go-wca/pkg/wca"
 	"go.uber.org/zap"
 )
 
-var errNoSuchProcess = errors.New("No such process")
-var errRefreshSessions = errors.New("Trigger session refresh")
+var errNoSuchProcess = errors.New("no such process")
+var errRefreshSessions = errors.New("trigger session refresh")
 
 type wcaSession struct {
 	baseSession

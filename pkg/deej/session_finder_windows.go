@@ -4,12 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"syscall"
 	"time"
 	"unsafe"
 
 	ole "github.com/go-ole/go-ole"
-	wca "github.com/moutend/go-wca"
+	wca "github.com/moutend/go-wca/pkg/wca"
 	"go.uber.org/zap"
 )
 
@@ -199,19 +198,11 @@ func (sf *wcaSessionFinder) getDefaultAudioEndpoints() (*wca.IMMDevice, *wca.IMM
 }
 
 func (sf *wcaSessionFinder) registerDefaultDeviceChangeCallback() error {
-	sf.mmNotificationClient = &wca.IMMNotificationClient{}
-	sf.mmNotificationClient.VTable = &wca.IMMNotificationClientVtbl{}
+	callback := wca.IMMNotificationClientCallback{
+		OnDefaultDeviceChanged: sf.defaultDeviceChangedCallback,
+	}
 
-	// fill the VTable with noops, except for OnDefaultDeviceChanged. that one's gold
-	sf.mmNotificationClient.VTable.QueryInterface = syscall.NewCallback(sf.noopCallback)
-	sf.mmNotificationClient.VTable.AddRef = syscall.NewCallback(sf.noopCallback)
-	sf.mmNotificationClient.VTable.Release = syscall.NewCallback(sf.noopCallback)
-	sf.mmNotificationClient.VTable.OnDeviceStateChanged = syscall.NewCallback(sf.noopCallback)
-	sf.mmNotificationClient.VTable.OnDeviceAdded = syscall.NewCallback(sf.noopCallback)
-	sf.mmNotificationClient.VTable.OnDeviceRemoved = syscall.NewCallback(sf.noopCallback)
-	sf.mmNotificationClient.VTable.OnPropertyValueChanged = syscall.NewCallback(sf.noopCallback)
-
-	sf.mmNotificationClient.VTable.OnDefaultDeviceChanged = syscall.NewCallback(sf.defaultDeviceChangedCallback)
+	sf.mmNotificationClient = wca.NewIMMNotificationClient(callback)
 
 	if err := sf.mmDeviceEnumerator.RegisterEndpointNotificationCallback(sf.mmNotificationClient); err != nil {
 		sf.logger.Warnw("Failed to call RegisterEndpointNotificationCallback", "error", err)
@@ -511,16 +502,14 @@ func (sf *wcaSessionFinder) enumerateAndAddProcessSessions(
 }
 
 func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
-	this *wca.IMMNotificationClient,
-	EDataFlow, eRole uint32,
-	lpcwstr uintptr,
-) (hResult uintptr) {
+	flow wca.EDataFlow, role wca.ERole, pwstrDeviceId string,
+) error {
 
 	// filter out calls that happen in rapid succession
 	now := time.Now()
 
 	if sf.lastDefaultDeviceChange.Add(minDefaultDeviceChangeThreshold).After(now) {
-		return
+		return nil
 	}
 
 	sf.lastDefaultDeviceChange = now
@@ -534,8 +523,5 @@ func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
 		sf.masterIn.markAsStale()
 	}
 
-	return
-}
-func (sf *wcaSessionFinder) noopCallback() (hResult uintptr) {
-	return
+	return nil
 }
