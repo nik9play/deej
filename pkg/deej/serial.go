@@ -4,13 +4,14 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jacobsa/go-serial/serial"
+	"go.bug.st/serial"
+	"go.bug.st/serial/enumerator"
+
 	"go.uber.org/zap"
 
 	"github.com/omriharel/deej/pkg/deej/util"
@@ -19,15 +20,15 @@ import (
 // SerialIO provides a deej-aware abstraction layer to managing serial I/O
 type SerialIO struct {
 	comPort  string
-	baudRate uint
+	baudRate int
 
 	deej   *Deej
 	logger *zap.SugaredLogger
 
 	stopChannel chan bool
 	connected   bool
-	connOptions serial.OpenOptions
-	conn        io.ReadWriteCloser
+	port        serial.Port
+	mode        serial.Mode
 
 	lastKnownNumSliders        int
 	currentSliderPercentValues []float32
@@ -53,7 +54,7 @@ func NewSerialIO(deej *Deej, logger *zap.SugaredLogger) (*SerialIO, error) {
 		logger:              logger,
 		stopChannel:         make(chan bool),
 		connected:           false,
-		conn:                nil,
+		port:                nil,
 		sliderMoveConsumers: []chan SliderMoveEvent{},
 	}
 
@@ -74,44 +75,69 @@ func (sio *SerialIO) Start() error {
 		return errors.New("serial: connection already active")
 	}
 
-	// set minimum read size according to platform (0 for windows, 1 for linux)
-	// this prevents a rare bug on windows where serial reads get congested,
-	// resulting in significant lag
-	minimumReadSize := 0
-	if util.Linux() {
-		minimumReadSize = 1
+	if sio.deej.config.ConnectionInfo.COMPort == "auto" {
+		sio.logger.Infow("Trying to autodetect serial port")
+
+		ports, err := enumerator.GetDetailedPortsList()
+
+		if err != nil {
+			sio.logger.Errorw("Failed to enumarate serial ports")
+			return errors.New("serial: failed to enumarate serial ports")
+		}
+		if len(ports) == 0 {
+			sio.logger.Errorw("No serial ports found!")
+			return errors.New("serial: no serial ports found")
+		}
+		for _, port := range ports {
+			sio.logger.Debugf("Found port: %s", port.Name)
+			if port.IsUSB {
+				sio.logger.Debugf("   USB ID     %s:%s", port.VID, port.PID)
+
+				// Found Arduino Nano
+				if port.VID == "1A86" && port.PID == "7523" {
+					sio.logger.Infow("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
+
+					sio.comPort = port.Name
+					break
+				}
+			}
+		}
+	} else {
+		sio.comPort = sio.deej.config.ConnectionInfo.COMPort
 	}
 
-	sio.connOptions = serial.OpenOptions{
-		PortName:        sio.deej.config.ConnectionInfo.COMPort,
-		BaudRate:        uint(sio.deej.config.ConnectionInfo.BaudRate),
-		DataBits:        8,
-		StopBits:        1,
-		MinimumReadSize: uint(minimumReadSize),
+	sio.mode = serial.Mode{
+		BaudRate: int(sio.deej.config.ConnectionInfo.BaudRate),
+		DataBits: 8,
+		StopBits: serial.OneStopBit,
 	}
+
+	sio.baudRate = sio.mode.BaudRate
 
 	sio.logger.Debugw("Attempting serial connection",
-		"comPort", sio.connOptions.PortName,
-		"baudRate", sio.connOptions.BaudRate,
-		"minReadSize", minimumReadSize)
+		"comPort", sio.comPort,
+		"baudRate", sio.mode.BaudRate)
 
 	var err error
-	sio.conn, err = serial.Open(sio.connOptions)
-	if err != nil {
 
+	sio.port, err = serial.Open(sio.comPort, &sio.mode)
+
+	if err != nil {
 		// might need a user notification here, TBD
 		sio.logger.Warnw("Failed to open serial connection", "error", err)
 		return fmt.Errorf("open serial connection: %w", err)
 	}
 
-	namedLogger := sio.logger.Named(strings.ToLower(sio.connOptions.PortName))
+	sio.port.SetReadTimeout(time.Duration(3) * time.Second)
 
-	namedLogger.Infow("Connected", "conn", sio.conn)
+	namedLogger := sio.logger.Named(strings.ToLower(sio.comPort))
+
+	namedLogger.Infow("Connected", "port", sio.port)
 	sio.connected = true
 
 	// read lines or await a stop
 	go func() {
-		connReader := bufio.NewReader(sio.conn)
+		connReader := bufio.NewReader(sio.port)
 		lineChannel := sio.readLine(namedLogger, connReader)
 
 		for {
@@ -167,8 +193,8 @@ func (sio *SerialIO) setupOnConfigReload() {
 				}()
 
 				// if connection params have changed, attempt to stop and start the connection
-				if sio.deej.config.ConnectionInfo.COMPort != sio.connOptions.PortName ||
-					uint(sio.deej.config.ConnectionInfo.BaudRate) != sio.connOptions.BaudRate {
+				if sio.deej.config.ConnectionInfo.COMPort != sio.comPort ||
+					int(sio.deej.config.ConnectionInfo.BaudRate) != sio.mode.BaudRate {
 
 					sio.logger.Info("Detected change in connection parameters, attempting to renew connection")
 					sio.Stop()
@@ -188,13 +214,13 @@ func (sio *SerialIO) setupOnConfigReload() {
 }
 
 func (sio *SerialIO) close(logger *zap.SugaredLogger) {
-	if err := sio.conn.Close(); err != nil {
+	if err := sio.port.Close(); err != nil {
 		logger.Warnw("Failed to close serial connection", "error", err)
 	} else {
 		logger.Debug("Serial connection closed")
 	}
 
-	sio.conn = nil
+	sio.port = nil
 	sio.connected = false
 }
 
