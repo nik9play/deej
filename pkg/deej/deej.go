@@ -11,7 +11,7 @@ import (
 
 	"go.bug.st/serial"
 
-	"github.com/omriharel/deej/pkg/deej/util"
+	"github.com/nik9play/deej/pkg/deej/util"
 )
 
 const (

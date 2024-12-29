@@ -1,4 +1,4 @@
-module github.com/omriharel/deej
+module github.com/nik9play/deej
 
 go 1.23.2
 

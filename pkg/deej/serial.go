@@ -14,7 +14,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/omriharel/deej/pkg/deej/util"
+	"github.com/nik9play/deej/pkg/deej/util"
 )
 
 type VIDPID struct {
