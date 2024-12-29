@@ -18,8 +18,8 @@ import (
 )
 
 type VIDPID struct {
-	VID string
-	PID string
+	VID uint64
+	PID uint64
 }
 
 // SerialIO provides a deej-aware abstraction layer to managing serial I/O
@@ -44,7 +44,7 @@ type SerialIO struct {
 var ErrNoSerialPorts = errors.New("no serial ports found")
 var ErrAutoPortNotFound = errors.New("can't autodetect com port")
 
-var allowedVIDPIDs = []VIDPID{{"1A86", "7523"}}
+var allowedVIDPIDs = []VIDPID{{0x1A86, 0x7523}}
 
 // SliderMoveEvent represents a single slider move captured by deej
 type SliderMoveEvent struct {
@@ -103,9 +103,12 @@ func (sio *SerialIO) Start() error {
 			if port.IsUSB {
 				sio.logger.Debugf("   USB ID     %s:%s", port.VID, port.PID)
 
-				// Found Arduino Nano
+				vid, _ := strconv.ParseUint(port.VID, 16, 16)
+				pid, _ := strconv.ParseUint(port.PID, 16, 16)
+
+				// Find Arduino Nano (CH340)
 				for _, vidpid := range allowedVIDPIDs {
-					if port.VID == vidpid.VID && port.PID == vidpid.PID {
+					if vid == vidpid.VID && pid == vidpid.PID {
 						sio.logger.Infow("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
 
 						sio.comPort = port.Name
