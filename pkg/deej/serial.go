@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.bug.st/serial"
@@ -30,8 +31,10 @@ type SerialIO struct {
 	deej   *Deej
 	logger *zap.SugaredLogger
 
-	stopChannel chan bool
-	connected   bool
+	stopChannel chan struct{}
+	errChannel  chan error
+	wg          sync.WaitGroup
+	stopping    bool
 	port        serial.Port
 	mode        serial.Mode
 
@@ -62,9 +65,8 @@ func NewSerialIO(deej *Deej, logger *zap.SugaredLogger) (*SerialIO, error) {
 	sio := &SerialIO{
 		deej:                deej,
 		logger:              logger,
-		stopChannel:         make(chan bool),
-		connected:           false,
 		port:                nil,
+		errChannel:          make(chan error, 1),
 		sliderMoveConsumers: []chan SliderMoveEvent{},
 	}
 
@@ -76,26 +78,28 @@ func NewSerialIO(deej *Deej, logger *zap.SugaredLogger) (*SerialIO, error) {
 	return sio, nil
 }
 
-// Start attempts to connect to our arduino chip
-func (sio *SerialIO) Start() error {
-
+func (sio *SerialIO) connect() error {
 	// don't allow multiple concurrent connections
-	if sio.connected {
+	if sio.port != nil {
 		sio.logger.Warn("Already connected, can't start another without closing first")
 		return errors.New("serial: connection already active")
 	}
 
-	if sio.deej.config.ConnectionInfo.COMPort == "auto" {
+	// sio.stopped = false
+
+	sio.comPort = sio.deej.config.ConnectionInfo.COMPort
+
+	if sio.comPort == "auto" {
 		sio.logger.Infow("Trying to autodetect serial port")
 
 		ports, err := enumerator.GetDetailedPortsList()
 
 		if err != nil {
-			sio.logger.Errorw("Failed to enumarate serial ports")
-			return fmt.Errorf("serial: failed to enumarate serial ports: %w", err)
+			sio.logger.Errorw("Failed to enumarate serial ports, retrying", "err", err)
+			return ErrNoSerialPorts
 		}
 		if len(ports) == 0 {
-			sio.logger.Errorw("No serial ports found!")
+			sio.logger.Warn("No serial ports found, retrying")
 			return ErrNoSerialPorts
 		}
 		for _, port := range ports {
@@ -118,11 +122,10 @@ func (sio *SerialIO) Start() error {
 			}
 		}
 
-		if len(sio.comPort) == 0 {
+		if sio.comPort == "auto" {
+			sio.logger.Warn("COM port not found, retrying")
 			return ErrAutoPortNotFound
 		}
-	} else {
-		sio.comPort = sio.deej.config.ConnectionInfo.COMPort
 	}
 
 	sio.mode = serial.Mode{
@@ -137,9 +140,7 @@ func (sio *SerialIO) Start() error {
 		"comPort", sio.comPort,
 		"baudRate", sio.mode.BaudRate)
 
-	var err error
-
-	sio.port, err = serial.Open(sio.comPort, &sio.mode)
+	port, err := serial.Open(sio.comPort, &sio.mode)
 
 	if err != nil {
 		// might need a user notification here, TBD
@@ -147,39 +148,30 @@ func (sio *SerialIO) Start() error {
 		return err
 	}
 
-	sio.port.SetReadTimeout(time.Duration(3) * time.Second)
+	port.SetReadTimeout(time.Duration(3) * time.Second)
 
-	namedLogger := sio.logger.Named(strings.ToLower(sio.comPort))
-
-	namedLogger.Infow("Connected", "port", sio.port)
-	sio.connected = true
-
-	// read lines or await a stop
-	go func() {
-		connReader := bufio.NewReader(sio.port)
-		lineChannel := sio.readLine(namedLogger, connReader)
-
-		for {
-			select {
-			case <-sio.stopChannel:
-				sio.close(namedLogger)
-			case line := <-lineChannel:
-				sio.handleLine(namedLogger, line)
-			}
-		}
-	}()
+	sio.port = port
 
 	return nil
 }
 
+// Start attempts to connect to our arduino chip
+func (sio *SerialIO) Start() {
+	sio.stopping = false
+	sio.stopChannel = make(chan struct{})
+	sio.logger.Info("Serial starting")
+	sio.wg.Add(1)
+	go sio.managerLoop()
+}
+
 // Stop signals us to shut down our serial connection, if one is active
 func (sio *SerialIO) Stop() {
-	if sio.connected {
-		sio.logger.Debug("Shutting down serial connection")
-		sio.stopChannel <- true
-	} else {
-		sio.logger.Debug("Not currently connected, nothing to stop")
-	}
+	sio.stopping = true
+	close(sio.stopChannel)
+
+	// Wait for all goroutines to finish
+	sio.wg.Wait()
+	sio.logger.Info("Serial stopped")
 }
 
 // SubscribeToSliderMoveEvents returns an unbuffered channel that receives
@@ -221,18 +213,80 @@ func (sio *SerialIO) setupOnConfigReload() {
 					// let the connection close
 					<-time.After(stopDelay)
 
-					if err := sio.Start(); err != nil {
-						sio.logger.Warnw("Failed to renew connection after parameter change", "error", err)
-					} else {
-						sio.logger.Debug("Renewed connection successfully")
-					}
+					sio.Start()
 				}
 			}
 		}
 	}()
 }
 
-func (sio *SerialIO) close(logger *zap.SugaredLogger) {
+// manages serial connection and retries
+func (sio *SerialIO) managerLoop() {
+	defer sio.wg.Done()
+
+	for {
+		if sio.stopping {
+			sio.logger.Debug("managerLoop: stop var")
+			return
+		}
+
+		sio.logger.Infof("Trying serial connection %s (baud %d)", sio.comPort, sio.baudRate)
+		err := sio.connect()
+		if err != nil {
+			sio.logger.Warnf("Serial connection error: %v. Trying again...", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		namedLogger := sio.logger.Named(strings.ToLower(sio.comPort))
+		namedLogger.Infow("Connected", "port", sio.port)
+
+		sio.wg.Add(1)
+		go sio.readLoop(namedLogger)
+
+		select {
+		case err := <-sio.errChannel:
+			sio.logger.Warnf("Read line error: %v", err)
+			sio.closePort(namedLogger)
+			time.Sleep(1 * time.Second)
+			continue
+
+		case <-sio.stopChannel:
+			sio.logger.Debug("managerLoop: stop signal")
+			sio.stopping = true
+			sio.closePort(namedLogger)
+			return
+		}
+	}
+}
+
+func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
+	defer sio.wg.Done()
+
+	reader := bufio.NewReader(sio.port)
+	for {
+		select {
+		case <-sio.stopChannel:
+			logger.Debug("readLoop: stop signal")
+			return
+		default:
+		}
+
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			sio.errChannel <- fmt.Errorf("read error: %w", err)
+			return
+		}
+
+		if sio.deej.Verbose() {
+			logger.Debugw("Read new line", "line", line)
+		}
+
+		sio.handleLine(line)
+	}
+}
+
+func (sio *SerialIO) closePort(logger *zap.SugaredLogger) {
 	if err := sio.port.Close(); err != nil {
 		logger.Warnw("Failed to close serial connection", "error", err)
 	} else {
@@ -240,38 +294,9 @@ func (sio *SerialIO) close(logger *zap.SugaredLogger) {
 	}
 
 	sio.port = nil
-	sio.connected = false
 }
 
-func (sio *SerialIO) readLine(logger *zap.SugaredLogger, reader *bufio.Reader) chan string {
-	ch := make(chan string)
-
-	go func() {
-		for {
-			line, err := reader.ReadString('\n')
-			if err != nil {
-
-				if sio.deej.Verbose() {
-					logger.Warnw("Failed to read line from serial", "error", err, "line", line)
-				}
-
-				// just ignore the line, the read loop will stop after this
-				return
-			}
-
-			if sio.deej.Verbose() {
-				logger.Debugw("Read new line", "line", line)
-			}
-
-			// deliver the line to the channel
-			ch <- line
-		}
-	}()
-
-	return ch
-}
-
-func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
+func (sio *SerialIO) handleLine(line string) {
 
 	// this function receives an unsanitized line which is guaranteed to end with LF,
 	// but most lines will end with CRLF. it may also have garbage instead of
@@ -289,7 +314,7 @@ func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
 
 	// update our slider count, if needed - this will send slider move events for all
 	if numSliders != sio.lastKnownNumSliders {
-		logger.Infow("Detected sliders", "amount", numSliders)
+		sio.logger.Infow("Detected sliders", "amount", numSliders)
 		sio.lastKnownNumSliders = numSliders
 		sio.currentSliderPercentValues = make([]float32, numSliders)
 
@@ -336,7 +361,7 @@ func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
 			})
 
 			if sio.deej.Verbose() {
-				logger.Debugw("Slider moved", "event", moveEvents[len(moveEvents)-1])
+				sio.logger.Debugw("Slider moved", "event", moveEvents[len(moveEvents)-1])
 			}
 		}
 	}

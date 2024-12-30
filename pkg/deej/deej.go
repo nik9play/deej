@@ -3,13 +3,10 @@
 package deej
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
 	"go.uber.org/zap"
-
-	"go.bug.st/serial"
 
 	"github.com/nik9play/deej/pkg/deej/util"
 )
@@ -143,40 +140,8 @@ func (d *Deej) run() {
 	// watch the config file for changes
 	go d.config.WatchConfigFileChanges()
 
-	// connect to the arduino for the first time
-	go func() {
-		if err := d.serial.Start(); err != nil {
-			d.logger.Warnw("Failed to start first-time serial connection", "error", err)
-
-			d.logger.Warnw("Provided COM port seems wrong, notifying user and closing",
-				"comPort", d.config.ConnectionInfo.COMPort)
-
-			portErr, isPortErr := err.(*serial.PortError)
-			msg := ""
-
-			// If the port is busy, that's because something else is connected - notify and quit
-			if isPortErr {
-				if portErr.Code() == serial.PortBusy {
-					msg = "This serial port is busy, make sure to close any serial monitor or other deej instance."
-				}
-
-				if portErr.Code() == serial.PortNotFound {
-					msg = "This serial port doesn't exist, check your configuration and make sure it's set correctly."
-				}
-
-				// also notify if the COM port they gave isn't found, maybe their config is wrong
-			} else if errors.Is(err, ErrNoSerialPorts) || errors.Is(err, ErrAutoPortNotFound) {
-				msg = "This serial port doesn't exist, check your configuration and make sure it's set correctly."
-			}
-
-			if len(msg) > 0 {
-				d.notifier.Notify(fmt.Sprintf("Can't connect to %s!", d.config.ConnectionInfo.COMPort),
-					msg)
-			}
-
-			d.signalStop()
-		}
-	}()
+	// connect to the arduino
+	d.serial.Start()
 
 	// wait until stopped (gracefully)
 	<-d.stopChannel
