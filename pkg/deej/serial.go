@@ -190,31 +190,29 @@ func (sio *SerialIO) setupOnConfigReload() {
 
 	go func() {
 		for {
-			select {
-			case <-configReloadedChannel:
+			<-configReloadedChannel
 
-				// make any config reload unset our slider number to ensure process volumes are being re-set
-				// (the next read line will emit SliderMoveEvent instances for all sliders)\
-				// this needs to happen after a small delay, because the session map will also re-acquire sessions
-				// whenever the config file is reloaded, and we don't want it to receive these move events while the map
-				// is still cleared. this is kind of ugly, but shouldn't cause any issues
-				go func() {
-					<-time.After(stopDelay)
-					sio.lastKnownNumSliders = 0
-				}()
+			// make any config reload unset our slider number to ensure process volumes are being re-set
+			// (the next read line will emit SliderMoveEvent instances for all sliders)\
+			// this needs to happen after a small delay, because the session map will also re-acquire sessions
+			// whenever the config file is reloaded, and we don't want it to receive these move events while the map
+			// is still cleared. this is kind of ugly, but shouldn't cause any issues
+			go func() {
+				time.Sleep(stopDelay)
+				sio.lastKnownNumSliders = 0
+			}()
 
-				// if connection params have changed, attempt to stop and start the connection
-				if sio.deej.config.ConnectionInfo.COMPort != sio.comPort ||
-					int(sio.deej.config.ConnectionInfo.BaudRate) != sio.mode.BaudRate {
+			// if connection params have changed, attempt to stop and start the connection
+			if sio.deej.config.ConnectionInfo.COMPort != sio.comPort ||
+				int(sio.deej.config.ConnectionInfo.BaudRate) != sio.mode.BaudRate {
 
-					sio.logger.Info("Detected change in connection parameters, attempting to renew connection")
-					sio.Stop()
+				sio.logger.Info("Detected change in connection parameters, attempting to renew connection")
+				sio.Stop()
 
-					// let the connection close
-					<-time.After(stopDelay)
+				// let the connection close
+				time.Sleep(stopDelay)
 
-					sio.Start()
-				}
+				sio.Start()
 			}
 		}
 	}()
@@ -233,7 +231,7 @@ func (sio *SerialIO) managerLoop() {
 		sio.logger.Infof("Trying serial connection %s (baud %d)", sio.comPort, sio.baudRate)
 		err := sio.connect()
 		if err != nil {
-			sio.logger.Warnf("Serial connection error: %v. Trying again...", err)
+			sio.logger.Warnw("Serial connection error. Trying again... ", "err", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -246,7 +244,7 @@ func (sio *SerialIO) managerLoop() {
 
 		select {
 		case err := <-sio.errChannel:
-			sio.logger.Warnf("Read line error: %v", err)
+			sio.logger.Warnw("Read line error", "err", err)
 			sio.closePort(namedLogger)
 			time.Sleep(1 * time.Second)
 			continue
@@ -297,7 +295,6 @@ func (sio *SerialIO) closePort(logger *zap.SugaredLogger) {
 }
 
 func (sio *SerialIO) handleLine(line string) {
-
 	// this function receives an unsanitized line which is guaranteed to end with LF,
 	// but most lines will end with CRLF. it may also have garbage instead of
 	// deej-formatted values, so we must check for that! just ignore bad ones

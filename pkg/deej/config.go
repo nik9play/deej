@@ -187,7 +187,7 @@ func (cc *CanonicalConfig) WatchConfigFileChanges() {
 				cc.logger.Debugw("Config file modified, attempting reload", "event", event)
 
 				// wait a bit to let the editor actually flush the new file contents to disk
-				<-time.After(delayBetweenEventAndReload)
+				time.Sleep(delayBetweenEventAndReload)
 
 				if err := cc.Load(); err != nil {
 					cc.logger.Warnw("Failed to reload config file", "error", err)
