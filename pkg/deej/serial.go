@@ -280,7 +280,7 @@ func (sio *SerialIO) managerLoop() {
 			sio.deej.notifier.Notify(disconnectedTitle, disconnectedDescription)
 
 			sio.closePort(namedLogger)
-			time.Sleep(1 * time.Second)
+			time.Sleep(2 * time.Second)
 			continue
 
 		case <-sio.stopChannel:
