@@ -2,6 +2,7 @@ package deej
 
 import (
 	"github.com/getlantern/systray"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/nik9play/deej/pkg/deej/icon"
 	"github.com/nik9play/deej/pkg/deej/util"
@@ -17,10 +18,34 @@ func (d *Deej) initializeTray(onDone func()) {
 		systray.SetTitle("deej")
 		systray.SetTooltip("deej")
 
-		editConfig := systray.AddMenuItem("Edit configuration", "Open config file with notepad")
+		configTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "EditConfigTitle",
+				Other: "Edit configuration",
+			},
+		})
+		configDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "EditConfigDescription",
+				Other: "Open config file with notepad",
+			},
+		})
+		editConfig := systray.AddMenuItem(configTitle, configDescription)
 		editConfig.SetIcon(icon.EditConfig)
 
-		refreshSessions := systray.AddMenuItem("Re-scan audio sessions", "Manually refresh audio sessions if something's stuck")
+		rescanTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "RescanSessionsTitle",
+				Other: "Re-scan audio sessions",
+			},
+		})
+		rescanDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "RescanSessionsDescription",
+				Other: "Manually refresh audio sessions if something's stuck",
+			},
+		})
+		refreshSessions := systray.AddMenuItem(rescanTitle, rescanDescription)
 		refreshSessions.SetIcon(icon.RefreshSessions)
 
 		if d.version != "" {
@@ -30,7 +55,20 @@ func (d *Deej) initializeTray(onDone func()) {
 		}
 
 		systray.AddSeparator()
-		quit := systray.AddMenuItem("Quit", "Stop deej and quit")
+
+		quitTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "QuitTitle",
+				Other: "Quit",
+			},
+		})
+		quitDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "QuitDescription",
+				Other: "Stop deej and quit",
+			},
+		})
+		quit := systray.AddMenuItem(quitTitle, quitDescription)
 
 		// wait on things to happen
 		go func() {

@@ -13,6 +13,7 @@ import (
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"go.uber.org/zap"
 
 	"github.com/nik9play/deej/pkg/deej/util"
@@ -88,6 +89,7 @@ func (sio *SerialIO) connect() error {
 	// sio.stopped = false
 
 	sio.comPort = sio.deej.config.ConnectionInfo.COMPort
+	sio.baudRate = sio.deej.config.ConnectionInfo.BaudRate
 
 	if sio.comPort == "auto" {
 		sio.logger.Infow("Trying to autodetect serial port")
@@ -129,12 +131,10 @@ func (sio *SerialIO) connect() error {
 	}
 
 	sio.mode = serial.Mode{
-		BaudRate: int(sio.deej.config.ConnectionInfo.BaudRate),
+		BaudRate: sio.deej.config.ConnectionInfo.BaudRate,
 		DataBits: 8,
 		StopBits: serial.OneStopBit,
 	}
-
-	sio.baudRate = sio.mode.BaudRate
 
 	sio.logger.Debugw("Attempting serial connection",
 		"comPort", sio.comPort,
@@ -186,8 +186,6 @@ func (sio *SerialIO) SubscribeToSliderMoveEvents() chan SliderMoveEvent {
 func (sio *SerialIO) setupOnConfigReload() {
 	configReloadedChannel := sio.deej.config.SubscribeToChanges()
 
-	const stopDelay = 50 * time.Millisecond
-
 	go func() {
 		for {
 			<-configReloadedChannel
@@ -198,19 +196,19 @@ func (sio *SerialIO) setupOnConfigReload() {
 			// whenever the config file is reloaded, and we don't want it to receive these move events while the map
 			// is still cleared. this is kind of ugly, but shouldn't cause any issues
 			go func() {
-				time.Sleep(stopDelay)
+				time.Sleep(50 * time.Millisecond)
 				sio.lastKnownNumSliders = 0
 			}()
 
 			// if connection params have changed, attempt to stop and start the connection
 			if sio.deej.config.ConnectionInfo.COMPort != sio.comPort ||
-				int(sio.deej.config.ConnectionInfo.BaudRate) != sio.mode.BaudRate {
+				sio.deej.config.ConnectionInfo.BaudRate != sio.baudRate {
 
 				sio.logger.Info("Detected change in connection parameters, attempting to renew connection")
 				sio.Stop()
 
 				// let the connection close
-				time.Sleep(stopDelay)
+				time.Sleep(2 * time.Second)
 
 				sio.Start()
 			}
@@ -219,6 +217,8 @@ func (sio *SerialIO) setupOnConfigReload() {
 }
 
 // manages serial connection and retries
+//
+//go:generate goi18n extract -sourceLanguage en
 func (sio *SerialIO) managerLoop() {
 	defer sio.wg.Done()
 
@@ -239,12 +239,46 @@ func (sio *SerialIO) managerLoop() {
 		namedLogger := sio.logger.Named(strings.ToLower(sio.comPort))
 		namedLogger.Infow("Connected", "port", sio.port)
 
+		connectedTitle := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "ComPortConnectedNotificationTitle",
+				Other: "Connected to {{.ComPort}}.",
+			},
+			TemplateData: map[string]string{
+				"ComPort": sio.comPort,
+			},
+		})
+		connectedDescription := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "ComPortConnectedNotificationDescription",
+				Other: "Succesfully connected to deej.",
+			},
+		})
+		sio.deej.notifier.Notify(connectedTitle, connectedDescription)
+
 		sio.wg.Add(1)
 		go sio.readLoop(namedLogger)
 
 		select {
 		case err := <-sio.errChannel:
 			sio.logger.Warnw("Read line error", "err", err)
+			disconnectedTitle := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
+				DefaultMessage: &i18n.Message{
+					ID:    "ComPortDisconnectedNotificationTitle",
+					Other: "Disconnected from {{.ComPort}} due to an error.",
+				},
+				TemplateData: map[string]string{
+					"ComPort": sio.comPort,
+				},
+			})
+			disconnectedDescription := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
+				DefaultMessage: &i18n.Message{
+					ID:    "ComPortDisconnectedNotificationDescription",
+					Other: "Trying to reconnect.",
+				},
+			})
+			sio.deej.notifier.Notify(disconnectedTitle, disconnectedDescription)
+
 			sio.closePort(namedLogger)
 			time.Sleep(1 * time.Second)
 			continue
@@ -280,7 +314,7 @@ func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
 			logger.Debugw("Read new line", "line", line)
 		}
 
-		sio.handleLine(line)
+		sio.handleLine(logger, line)
 	}
 }
 
@@ -294,7 +328,7 @@ func (sio *SerialIO) closePort(logger *zap.SugaredLogger) {
 	sio.port = nil
 }
 
-func (sio *SerialIO) handleLine(line string) {
+func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
 	// this function receives an unsanitized line which is guaranteed to end with LF,
 	// but most lines will end with CRLF. it may also have garbage instead of
 	// deej-formatted values, so we must check for that! just ignore bad ones
@@ -311,7 +345,7 @@ func (sio *SerialIO) handleLine(line string) {
 
 	// update our slider count, if needed - this will send slider move events for all
 	if numSliders != sio.lastKnownNumSliders {
-		sio.logger.Infow("Detected sliders", "amount", numSliders)
+		logger.Infow("Detected sliders", "amount", numSliders)
 		sio.lastKnownNumSliders = numSliders
 		sio.currentSliderPercentValues = make([]float32, numSliders)
 
@@ -331,7 +365,7 @@ func (sio *SerialIO) handleLine(line string) {
 		// turns out the first line could come out dirty sometimes (i.e. "4558|925|41|643|220")
 		// so let's check the first number for correctness just in case
 		if sliderIdx == 0 && number > 1023 {
-			sio.logger.Debugw("Got malformed line from serial, ignoring", "line", line)
+			logger.Debugw("Got malformed line from serial, ignoring", "line", line)
 			return
 		}
 
@@ -358,7 +392,7 @@ func (sio *SerialIO) handleLine(line string) {
 			})
 
 			if sio.deej.Verbose() {
-				sio.logger.Debugw("Slider moved", "event", moveEvents[len(moveEvents)-1])
+				logger.Debugw("Slider moved", "event", moveEvents[len(moveEvents)-1])
 			}
 		}
 	}

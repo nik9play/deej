@@ -1,0 +1,71 @@
+[ComPortConnectedNotificationDescription]
+hash = "sha1-89d7bd7e7a7a2af598436a506b49e56b522fc07b"
+other = "Успешное подключение к deej."
+
+[ComPortConnectedNotificationTitle]
+hash = "sha1-99e27f1ea178ae2b318c756f266c191b6b651097"
+other = "Подключен к {{.ComPort}}."
+
+[ComPortDisconnectedNotificationDescription]
+hash = "sha1-1e660da3f0a1e6d9e41c36faa5a9c2bf3f1fb75a"
+other = "Попытка переподключения."
+
+[ComPortDisconnectedNotificationTitle]
+hash = "sha1-dbe022b756cc1a7542fca7db4384bdf3ac331d61"
+other = "Отключен от {{.ComPort}} из-за ошибки."
+
+[ConfigErrorDescription]
+hash = "sha1-2d755cadbc18c52232808cdaf99d584c96d053a3"
+other = "Пожалуйста, проверьте журнал deej."
+
+[ConfigErrorTitle]
+hash = "sha1-2b6141cc4f1968c9527e05f369b8900c9fc7265d"
+other = "Ошибка загрузки конфигурации!"
+
+[ConfigInvalidDescription]
+hash = "sha1-e358de995185bfd748b0af785abd9d1c9ce8f8eb"
+other = "Убедитесь, что файл {{.FilePath}} в правильном формате."
+
+[ConfigInvalidTitle]
+hash = "sha1-248e9942257924880cc48fbdc841316789ba895e"
+other = "Неверная конфигурация!"
+
+[ConfigNotFoundDescription]
+hash = "sha1-d7cd215d79159cc9fb8a052be55eb24418ef8f9b"
+other = "{{.FilePath}} должен быть в той же директории, что и deej. Пожалуйста, перезапустите приложение."
+
+[ConfigNotFoundTitle]
+hash = "sha1-574449081925505c020840456b92875d9a2c85d4"
+other = "Конфигурация не найдена!"
+
+[ConfigReloadDescription]
+hash = "sha1-94687226ad160ac7d49b2563cd96f4a27c37bdbf"
+other = "Ваши изменения были применены."
+
+[ConfigReloadTitle]
+hash = "sha1-c452cde8a9bc161e611e7c35036fc6694e33be44"
+other = "Конфигурация обновлена!"
+
+[EditConfigDescription]
+hash = "sha1-d97107cb375b7e3fa0bcd239cf29d43dfe939db4"
+other = "Редактировать файл конфигурации"
+
+[EditConfigTitle]
+hash = "sha1-8139ad1d0afcd3f4a2d34b1cafb1c4a1e8a51825"
+other = "Редактировать конфигурацию"
+
+[QuitDescription]
+hash = "sha1-2683afe6d5eb3d1a51548bd95d2ea0af240e381f"
+other = "Остановить deej и выйти"
+
+[QuitTitle]
+hash = "sha1-1a2285d8881f226e13430515a9dd2b9fb6294200"
+other = "Выйти"
+
+[RescanSessionsDescription]
+hash = "sha1-3d8a2e429c29a75c484ebb38cf3d70ecf0906bd7"
+other = "Обновление аудио сессий, если что-то пошло не так"
+
+[RescanSessionsTitle]
+hash = "sha1-7210421850570f6f4636552699ec2594b50bd21a"
+other = "Обновить аудио сессии"

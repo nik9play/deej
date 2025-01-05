@@ -7,7 +7,11 @@ import (
 	"os"
 
 	"go.uber.org/zap"
+	"golang.org/x/text/language"
 
+	"github.com/BurntSushi/toml"
+	"github.com/jeandeaual/go-locale"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/nik9play/deej/pkg/deej/util"
 )
 
@@ -19,11 +23,13 @@ const (
 
 // Deej is the main entity managing access to all sub-components
 type Deej struct {
-	logger   *zap.SugaredLogger
-	notifier Notifier
-	config   *CanonicalConfig
-	serial   *SerialIO
-	sessions *sessionMap
+	logger    *zap.SugaredLogger
+	notifier  Notifier
+	config    *CanonicalConfig
+	serial    *SerialIO
+	sessions  *sessionMap
+	bundle    *i18n.Bundle
+	localizer *i18n.Localizer
 
 	stopChannel chan bool
 	version     string
@@ -33,6 +39,10 @@ type Deej struct {
 // NewDeej creates a Deej instance
 func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
 	logger = logger.Named("deej")
+
+	bundle := i18n.NewBundle(language.English)
+	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
+	bundle.LoadMessageFile("./lang/active.ru.toml")
 
 	notifier, err := NewToastNotifier(logger)
 	if err != nil {
@@ -52,6 +62,7 @@ func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
 		config:      config,
 		stopChannel: make(chan bool),
 		verbose:     verbose,
+		bundle:      bundle,
 	}
 
 	serial, err := NewSerialIO(d, logger)
@@ -85,11 +96,30 @@ func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
 func (d *Deej) Initialize() error {
 	d.logger.Debug("Initializing")
 
+	// create temp localizer because we don't know the language yet
+	lang, err := locale.GetLocale()
+	if err != nil {
+		return fmt.Errorf("get system locale: %w", err)
+	}
+	localizer := i18n.NewLocalizer(d.bundle, lang, "en")
+
 	// load the config for the first time
-	if err := d.config.Load(); err != nil {
+	if err := d.config.Load(localizer); err != nil {
 		d.logger.Errorw("Failed to load config during initialization", "error", err)
 		return fmt.Errorf("load config during init: %w", err)
 	}
+
+	lang = d.config.Language
+	if lang == "auto" {
+		var err error
+		lang, err = locale.GetLocale()
+
+		if err != nil {
+			d.logger.Errorw("Failed to get system locale", "error", err)
+			return fmt.Errorf("get system locale: %w", err)
+		}
+	}
+	d.localizer = i18n.NewLocalizer(d.bundle, lang, "en")
 
 	// initialize the session map
 	if err := d.sessions.initialize(); err != nil {
@@ -138,7 +168,7 @@ func (d *Deej) run() {
 	d.logger.Info("Run loop starting")
 
 	// watch the config file for changes
-	go d.config.WatchConfigFileChanges()
+	go d.config.WatchConfigFileChanges(d.localizer)
 
 	// connect to the arduino
 	d.serial.Start()

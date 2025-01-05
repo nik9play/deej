@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
@@ -26,6 +27,8 @@ type CanonicalConfig struct {
 	InvertSliders bool
 
 	NoiseReductionLevel string
+
+	Language string
 
 	logger             *zap.SugaredLogger
 	notifier           Notifier
@@ -104,14 +107,29 @@ func NewConfig(logger *zap.SugaredLogger, notifier Notifier) (*CanonicalConfig, 
 }
 
 // Load reads deej's config files from disk and tries to parse them
-func (cc *CanonicalConfig) Load() error {
+func (cc *CanonicalConfig) Load(localizer *i18n.Localizer) error {
 	cc.logger.Debugw("Loading config", "path", userConfigFilepath)
 
 	// make sure it exists
 	if !util.FileExists(userConfigFilepath) {
 		cc.logger.Warnw("Config file not found", "path", userConfigFilepath)
-		cc.notifier.Notify("Can't find configuration!",
-			fmt.Sprintf("%s must be in the same directory as deej. Please re-launch", userConfigFilepath))
+
+		configNotFoundTitle := localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "ConfigNotFoundTitle",
+				Other: "Can't find configuration!",
+			},
+		})
+		configNotFoundDescription := localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "ConfigNotFoundDescription",
+				Other: "{{.FilePath}} must be in the same directory as deej. Please re-launch.",
+			},
+			TemplateData: map[string]string{
+				"FilePath": userConfigFilepath,
+			},
+		})
+		cc.notifier.Notify(configNotFoundTitle, configNotFoundDescription)
 
 		return fmt.Errorf("config file doesn't exist: %s", userConfigFilepath)
 	}
@@ -122,10 +140,36 @@ func (cc *CanonicalConfig) Load() error {
 
 		// if the error is yaml-format-related, show a sensible error. otherwise, show 'em to the logs
 		if strings.Contains(err.Error(), "yaml:") {
-			cc.notifier.Notify("Invalid configuration!",
-				fmt.Sprintf("Please make sure %s is in a valid YAML format.", userConfigFilepath))
+			configInvalidTitle := localizer.MustLocalize(&i18n.LocalizeConfig{
+				DefaultMessage: &i18n.Message{
+					ID:    "ConfigInvalidTitle",
+					Other: "Invalid configuration!",
+				},
+			})
+			configInvalidDescription := localizer.MustLocalize(&i18n.LocalizeConfig{
+				DefaultMessage: &i18n.Message{
+					ID:    "ConfigInvalidDescription",
+					Other: "Please make sure {{.FilePath}} is in a valid YAML format.",
+				},
+				TemplateData: map[string]string{
+					"FilePath": userConfigFilepath,
+				},
+			})
+			cc.notifier.Notify(configInvalidTitle, configInvalidDescription)
 		} else {
-			cc.notifier.Notify("Error loading configuration!", "Please check deej's logs for more details.")
+			configErrorTitle := localizer.MustLocalize(&i18n.LocalizeConfig{
+				DefaultMessage: &i18n.Message{
+					ID:    "ConfigErrorTitle",
+					Other: "Error loading configuration!",
+				},
+			})
+			configErrorDescription := localizer.MustLocalize(&i18n.LocalizeConfig{
+				DefaultMessage: &i18n.Message{
+					ID:    "ConfigErrorDescription",
+					Other: "Please check deej's logs for more details.",
+				},
+			})
+			cc.notifier.Notify(configErrorTitle, configErrorDescription)
 		}
 
 		return fmt.Errorf("read user config: %w", err)
@@ -161,7 +205,7 @@ func (cc *CanonicalConfig) SubscribeToChanges() chan bool {
 
 // WatchConfigFileChanges starts watching for configuration file changes
 // and attempts reloading the config when they happen
-func (cc *CanonicalConfig) WatchConfigFileChanges() {
+func (cc *CanonicalConfig) WatchConfigFileChanges(localizer *i18n.Localizer) {
 	cc.logger.Debugw("Starting to watch user config file for changes", "path", userConfigFilepath)
 
 	const (
@@ -189,11 +233,24 @@ func (cc *CanonicalConfig) WatchConfigFileChanges() {
 				// wait a bit to let the editor actually flush the new file contents to disk
 				time.Sleep(delayBetweenEventAndReload)
 
-				if err := cc.Load(); err != nil {
+				if err := cc.Load(localizer); err != nil {
 					cc.logger.Warnw("Failed to reload config file", "error", err)
 				} else {
 					cc.logger.Info("Reloaded config successfully")
-					cc.notifier.Notify("Configuration reloaded!", "Your changes have been applied.")
+
+					configReloadTitle := localizer.MustLocalize(&i18n.LocalizeConfig{
+						DefaultMessage: &i18n.Message{
+							ID:    "ConfigReloadTitle",
+							Other: "Configuration reloaded!",
+						},
+					})
+					configReloadDescription := localizer.MustLocalize(&i18n.LocalizeConfig{
+						DefaultMessage: &i18n.Message{
+							ID:    "ConfigReloadDescription",
+							Other: "Your changes have been applied.",
+						},
+					})
+					cc.notifier.Notify(configReloadTitle, configReloadDescription)
 
 					cc.onConfigReloaded()
 				}
