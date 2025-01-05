@@ -56,9 +56,11 @@ const (
 	configKeyCOMPort             = "com_port"
 	configKeyBaudRate            = "baud_rate"
 	configKeyNoiseReductionLevel = "noise_reduction"
+	configKeyLanguage            = "language"
 
 	defaultCOMPort  = "COM4"
 	defaultBaudRate = 9600
+	defaultLanguage = "auto"
 )
 
 // has to be defined as a non-constant because we're using path.Join
@@ -92,6 +94,7 @@ func NewConfig(logger *zap.SugaredLogger, notifier Notifier) (*CanonicalConfig, 
 	userConfig.SetDefault(configKeyInvertSliders, false)
 	userConfig.SetDefault(configKeyCOMPort, defaultCOMPort)
 	userConfig.SetDefault(configKeyBaudRate, defaultBaudRate)
+	userConfig.SetDefault(configKeyLanguage, defaultLanguage)
 
 	internalConfig := viper.New()
 	internalConfig.SetConfigName(internalConfigName)
@@ -295,6 +298,7 @@ func (cc *CanonicalConfig) populateFromVipers() error {
 
 	cc.InvertSliders = cc.userConfig.GetBool(configKeyInvertSliders)
 	cc.NoiseReductionLevel = cc.userConfig.GetString(configKeyNoiseReductionLevel)
+	cc.Language = cc.userConfig.GetString(configKeyLanguage)
 
 	cc.logger.Debug("Populated config fields from vipers")
 
