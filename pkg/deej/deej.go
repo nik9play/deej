@@ -3,6 +3,7 @@
 package deej
 
 import (
+	"embed"
 	"fmt"
 	"os"
 
@@ -36,13 +37,21 @@ type Deej struct {
 	verbose     bool
 }
 
+//go:embed lang/active.*.toml
+var langFS embed.FS
+
 // NewDeej creates a Deej instance
 func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
 	logger = logger.Named("deej")
 
 	bundle := i18n.NewBundle(language.English)
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-	bundle.LoadMessageFile("./lang/active.ru.toml")
+	_, err := bundle.LoadMessageFileFS(langFS, "lang/active.ru.toml")
+
+	if err != nil {
+		logger.Errorw("Failed to open ru message file", "error", err)
+		return nil, fmt.Errorf("load message file: %w", err)
+	}
 
 	notifier, err := NewToastNotifier(logger)
 	if err != nil {
@@ -97,7 +106,7 @@ func (d *Deej) Initialize() error {
 	d.logger.Debug("Initializing")
 
 	// create temp localizer because we don't know the language yet
-	lang, err := locale.GetLocale()
+	lang, err := locale.GetLanguage()
 	if err != nil {
 		return fmt.Errorf("get system locale: %w", err)
 	}
@@ -112,13 +121,14 @@ func (d *Deej) Initialize() error {
 	lang = d.config.Language
 	if lang == "auto" {
 		var err error
-		lang, err = locale.GetLocale()
+		lang, err = locale.GetLanguage()
 
 		if err != nil {
 			d.logger.Errorw("Failed to get system locale", "error", err)
 			return fmt.Errorf("get system locale: %w", err)
 		}
 	}
+	d.logger.Infof("Selected language: %s", lang)
 	d.localizer = i18n.NewLocalizer(d.bundle, lang, "en")
 
 	// initialize the session map
