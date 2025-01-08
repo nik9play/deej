@@ -24,4 +24,5 @@ baud_rate: 9600
 # supported values are "low" (excellent hardware), "default" (regular hardware) or "high" (bad, noisy hardware)
 noise_reduction: default
 
+# select language. Available options: auto, ru, en
 language: auto
