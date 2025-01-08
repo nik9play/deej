@@ -26,8 +26,9 @@ type VIDPID struct {
 
 // SerialIO provides a deej-aware abstraction layer to managing serial I/O
 type SerialIO struct {
-	comPort  string
-	baudRate int
+	comPortConfig  string
+	comPortToUse   string
+	baudRateConfig int
 
 	deej   *Deej
 	logger *zap.SugaredLogger
@@ -88,10 +89,12 @@ func (sio *SerialIO) connect() error {
 
 	// sio.stopped = false
 
-	sio.comPort = sio.deej.config.ConnectionInfo.COMPort
-	sio.baudRate = sio.deej.config.ConnectionInfo.BaudRate
+	sio.comPortConfig = sio.deej.config.ConnectionInfo.COMPort
+	sio.baudRateConfig = sio.deej.config.ConnectionInfo.BaudRate
 
-	if sio.comPort == "auto" {
+	sio.comPortToUse = sio.comPortConfig
+
+	if sio.comPortConfig == "auto" {
 		sio.logger.Infow("Trying to autodetect serial port")
 
 		ports, err := enumerator.GetDetailedPortsList()
@@ -117,14 +120,14 @@ func (sio *SerialIO) connect() error {
 					if vid == vidpid.VID && pid == vidpid.PID {
 						sio.logger.Infow("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
 
-						sio.comPort = port.Name
+						sio.comPortToUse = port.Name
 						break
 					}
 				}
 			}
 		}
 
-		if sio.comPort == "auto" {
+		if sio.comPortToUse == "auto" {
 			sio.logger.Warn("COM port not found, retrying")
 			return ErrAutoPortNotFound
 		}
@@ -137,10 +140,10 @@ func (sio *SerialIO) connect() error {
 	}
 
 	sio.logger.Debugw("Attempting serial connection",
-		"comPort", sio.comPort,
+		"comPort", sio.comPortToUse,
 		"baudRate", sio.mode.BaudRate)
 
-	port, err := serial.Open(sio.comPort, &sio.mode)
+	port, err := serial.Open(sio.comPortToUse, &sio.mode)
 
 	if err != nil {
 		// might need a user notification here, TBD
@@ -203,8 +206,8 @@ func (sio *SerialIO) setupOnConfigReload() {
 			}()
 
 			// if connection params have changed, attempt to stop and start the connection
-			if sio.deej.config.ConnectionInfo.COMPort != sio.comPort ||
-				sio.deej.config.ConnectionInfo.BaudRate != sio.baudRate {
+			if sio.deej.config.ConnectionInfo.COMPort != sio.comPortConfig ||
+				sio.deej.config.ConnectionInfo.BaudRate != sio.baudRateConfig {
 
 				sio.logger.Info("Detected change in connection parameters, attempting to renew connection")
 				sio.Stop()
@@ -230,7 +233,7 @@ func (sio *SerialIO) managerLoop() {
 			return
 		}
 
-		sio.logger.Infof("Trying serial connection %s (baud %d)", sio.comPort, sio.baudRate)
+		sio.logger.Infof("Trying serial connection")
 		err := sio.connect()
 		if err != nil {
 			sio.logger.Warnw("Serial connection error. Trying again... ", "err", err)
@@ -238,7 +241,7 @@ func (sio *SerialIO) managerLoop() {
 			continue
 		}
 
-		namedLogger := sio.logger.Named(strings.ToLower(sio.comPort))
+		namedLogger := sio.logger.Named(strings.ToLower(sio.comPortToUse))
 		namedLogger.Infow("Connected", "port", sio.port)
 
 		connectedTitle := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
@@ -247,7 +250,7 @@ func (sio *SerialIO) managerLoop() {
 				Other: "Connected to {{.ComPort}}.",
 			},
 			TemplateData: map[string]string{
-				"ComPort": sio.comPort,
+				"ComPort": sio.comPortToUse,
 			},
 		})
 		connectedDescription := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
@@ -270,7 +273,7 @@ func (sio *SerialIO) managerLoop() {
 					Other: "Disconnected from {{.ComPort}} due to an error.",
 				},
 				TemplateData: map[string]string{
-					"ComPort": sio.comPort,
+					"ComPort": sio.comPortToUse,
 				},
 			})
 			disconnectedDescription := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
