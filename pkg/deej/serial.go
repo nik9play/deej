@@ -171,6 +171,8 @@ func (sio *SerialIO) Stop() {
 
 	// Wait for all goroutines to finish
 	sio.wg.Wait()
+	// Close the port after all loops have stopped
+	sio.closePort()
 	sio.logger.Info("Serial stopped")
 }
 
@@ -279,14 +281,13 @@ func (sio *SerialIO) managerLoop() {
 			})
 			sio.deej.notifier.Notify(disconnectedTitle, disconnectedDescription)
 
-			sio.closePort(namedLogger)
+			sio.closePort()
 			time.Sleep(2 * time.Second)
 			continue
 
 		case <-sio.stopChannel:
 			sio.logger.Debug("managerLoop: stop signal")
 			sio.stopping = true
-			sio.closePort(namedLogger)
 			return
 		}
 	}
@@ -318,11 +319,11 @@ func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
 	}
 }
 
-func (sio *SerialIO) closePort(logger *zap.SugaredLogger) {
+func (sio *SerialIO) closePort() {
 	if err := sio.port.Close(); err != nil {
-		logger.Warnw("Failed to close serial connection", "error", err)
+		sio.logger.Warnw("Failed to close serial connection", "error", err)
 	} else {
-		logger.Debug("Serial connection closed")
+		sio.logger.Debug("Serial connection closed")
 	}
 
 	sio.port = nil
