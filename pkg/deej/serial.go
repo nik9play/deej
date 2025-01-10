@@ -175,7 +175,9 @@ func (sio *SerialIO) Stop() {
 	// Wait for all goroutines to finish
 	sio.wg.Wait()
 	// Close the port after all loops have stopped
-	sio.closePort()
+	if sio.port != nil {
+		sio.closePort()
+	}
 	sio.logger.Info("Serial stopped")
 }
 
@@ -322,14 +324,21 @@ func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
 	}
 }
 
-func (sio *SerialIO) closePort() {
+func (sio *SerialIO) closePort() error {
+	if sio.port == nil {
+		sio.logger.Warnw("Failed to close non-existenstent serial connection")
+		return errors.New("non-existenstent serial connection")
+	}
+
 	if err := sio.port.Close(); err != nil {
 		sio.logger.Warnw("Failed to close serial connection", "error", err)
+		return fmt.Errorf("close serial connection: %w", err)
 	} else {
 		sio.logger.Debug("Serial connection closed")
 	}
 
 	sio.port = nil
+	return nil
 }
 
 func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
