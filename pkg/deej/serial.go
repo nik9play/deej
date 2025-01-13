@@ -148,10 +148,14 @@ func (sio *SerialIO) connect() error {
 	if err != nil {
 		// might need a user notification here, TBD
 		sio.logger.Warnw("Failed to open serial connection", "error", err)
-		return err
+		return fmt.Errorf("open serial connection: %w", err)
 	}
 
-	port.SetReadTimeout(time.Duration(3) * time.Second)
+	err = port.SetReadTimeout(time.Duration(3) * time.Second)
+	if err != nil {
+		sio.logger.Warnw("Failed to set read timeout", "error", err)
+		return fmt.Errorf("set read timeout: %w", err)
+	}
 
 	sio.port = port
 
@@ -175,9 +179,7 @@ func (sio *SerialIO) Stop() {
 	// Wait for all goroutines to finish
 	sio.wg.Wait()
 	// Close the port after all loops have stopped
-	if sio.port != nil {
-		sio.closePort()
-	}
+	_ = sio.closePort()
 	sio.logger.Info("Serial stopped")
 }
 
@@ -286,7 +288,7 @@ func (sio *SerialIO) managerLoop() {
 			})
 			sio.deej.notifier.Notify(disconnectedTitle, disconnectedDescription)
 
-			sio.closePort()
+			_ = sio.closePort()
 			time.Sleep(2 * time.Second)
 			continue
 
@@ -326,17 +328,15 @@ func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
 
 func (sio *SerialIO) closePort() error {
 	if sio.port == nil {
-		sio.logger.Warnw("Failed to close non-existenstent serial connection")
-		return errors.New("non-existenstent serial connection")
+		return nil
 	}
 
 	if err := sio.port.Close(); err != nil {
 		sio.logger.Warnw("Failed to close serial connection", "error", err)
 		return fmt.Errorf("close serial connection: %w", err)
-	} else {
-		sio.logger.Debug("Serial connection closed")
 	}
 
+	sio.logger.Debug("Serial connection closed")
 	sio.port = nil
 	return nil
 }

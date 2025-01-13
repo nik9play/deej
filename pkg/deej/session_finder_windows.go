@@ -501,6 +501,7 @@ func (sf *wcaSessionFinder) enumerateAndAddProcessSessions(
 	return nil
 }
 
+//nolint:revive
 func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
 	flow wca.EDataFlow, role wca.ERole, pwstrDeviceId string,
 ) error {

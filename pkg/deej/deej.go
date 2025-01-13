@@ -105,31 +105,22 @@ func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
 func (d *Deej) Initialize() error {
 	d.logger.Debug("Initializing")
 
-	// create temp localizer because we don't know the language yet
-	lang, err := locale.GetLanguage()
+	// create temp initialLocalizer because we don't know the language yet
+	initialLocalizer, err := d.GetSystemLocalizer()
 	if err != nil {
-		return fmt.Errorf("get system locale: %w", err)
+		return err
 	}
-	localizer := i18n.NewLocalizer(d.bundle, lang, "en")
 
 	// load the config for the first time
-	if err := d.config.Load(localizer); err != nil {
+	if err := d.config.Load(initialLocalizer); err != nil {
 		d.logger.Errorw("Failed to load config during initialization", "error", err)
 		return fmt.Errorf("load config during init: %w", err)
 	}
 
-	lang = d.config.Language
-	if lang == "auto" {
-		var err error
-		lang, err = locale.GetLanguage()
-
-		if err != nil {
-			d.logger.Errorw("Failed to get system locale", "error", err)
-			return fmt.Errorf("get system locale: %w", err)
-		}
+	if err := d.updateLocalizer(); err != nil {
+		d.logger.Errorw("Failed to update localizer", "error", err)
+		return fmt.Errorf("update localizer: %w", err)
 	}
-	d.logger.Infof("Selected language: %s", lang)
-	d.localizer = i18n.NewLocalizer(d.bundle, lang, "en")
 
 	// initialize the session map
 	if err := d.sessions.initialize(); err != nil {
@@ -150,6 +141,31 @@ func (d *Deej) Initialize() error {
 		d.setupInterruptHandler()
 		d.initializeTray(d.run)
 	}
+
+	return nil
+}
+
+func (d *Deej) GetSystemLocalizer() (*i18n.Localizer, error) {
+	lang, err := locale.GetLanguage()
+	if err != nil {
+		return nil, fmt.Errorf("get system locale: %w", err)
+	}
+	return i18n.NewLocalizer(d.bundle, lang, "en"), nil
+}
+
+func (d *Deej) updateLocalizer() error {
+	lang := d.config.Language
+	if lang == "auto" {
+		var err error
+		lang, err = locale.GetLanguage()
+
+		if err != nil {
+			d.logger.Errorw("Failed to get system locale", "error", err)
+			return fmt.Errorf("get system locale: %w", err)
+		}
+	}
+	d.logger.Infof("Selected language: %s", lang)
+	d.localizer = i18n.NewLocalizer(d.bundle, lang, "en")
 
 	return nil
 }
@@ -190,10 +206,9 @@ func (d *Deej) run() {
 	if err := d.stop(); err != nil {
 		d.logger.Warnw("Failed to stop deej", "error", err)
 		os.Exit(1)
-	} else {
-		// exit with 0
-		os.Exit(0)
 	}
+	// exit with 0
+	os.Exit(0)
 }
 
 func (d *Deej) signalStop() {
@@ -216,7 +231,7 @@ func (d *Deej) stop() error {
 	d.stopTray()
 
 	// attempt to sync on exit - this won't necessarily work but can't harm
-	d.logger.Sync()
+	_ = d.logger.Sync()
 
 	return nil
 }
