@@ -4,9 +4,59 @@ import (
 	"github.com/getlantern/systray"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
-	"github.com/nik9play/deej/pkg/deej/icon"
 	"github.com/nik9play/deej/pkg/deej/util"
 )
+
+func getConfigItemText(d *Deej) (string, string) {
+	configTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "EditConfigTitle",
+			Other: "Edit configuration",
+		},
+	})
+	configDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "EditConfigDescription",
+			Other: "Open config file with notepad",
+		},
+	})
+
+	return configTitle, configDescription
+}
+
+func getRescanItemText(d *Deej) (string, string) {
+	rescanTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "RescanSessionsTitle",
+			Other: "Re-scan audio sessions",
+		},
+	})
+	rescanDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "RescanSessionsDescription",
+			Other: "Manually refresh audio sessions if something's stuck",
+		},
+	})
+
+	return rescanTitle, rescanDescription
+}
+
+func getQuitItemText(d *Deej) (string, string) {
+	quitTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "QuitTitle",
+			Other: "Quit",
+		},
+	})
+	quitDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "QuitDescription",
+			Other: "Stop deej and quit",
+		},
+	})
+
+	return quitTitle, quitDescription
+}
 
 func (d *Deej) initializeTray(onDone func()) {
 	logger := d.logger.Named("tray")
@@ -14,39 +64,17 @@ func (d *Deej) initializeTray(onDone func()) {
 	onReady := func() {
 		logger.Debug("Tray instance ready")
 
-		systray.SetTemplateIcon(icon.DeejLogo, icon.DeejLogo)
+		systray.SetTemplateIcon(DeejLogo, DeejLogo)
 		systray.SetTitle("deej")
 		systray.SetTooltip("deej")
 
-		configTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-			DefaultMessage: &i18n.Message{
-				ID:    "EditConfigTitle",
-				Other: "Edit configuration",
-			},
-		})
-		configDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-			DefaultMessage: &i18n.Message{
-				ID:    "EditConfigDescription",
-				Other: "Open config file with notepad",
-			},
-		})
+		configTitle, configDescription := getConfigItemText(d)
 		editConfig := systray.AddMenuItem(configTitle, configDescription)
-		editConfig.SetIcon(icon.EditConfig)
+		editConfig.SetIcon(EditConfigIcon)
 
-		rescanTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-			DefaultMessage: &i18n.Message{
-				ID:    "RescanSessionsTitle",
-				Other: "Re-scan audio sessions",
-			},
-		})
-		rescanDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-			DefaultMessage: &i18n.Message{
-				ID:    "RescanSessionsDescription",
-				Other: "Manually refresh audio sessions if something's stuck",
-			},
-		})
+		rescanTitle, rescanDescription := getRescanItemText(d)
 		refreshSessions := systray.AddMenuItem(rescanTitle, rescanDescription)
-		refreshSessions.SetIcon(icon.RefreshSessions)
+		refreshSessions.SetIcon(RefreshSessionsIcon)
 
 		if d.version != "" {
 			systray.AddSeparator()
@@ -56,25 +84,13 @@ func (d *Deej) initializeTray(onDone func()) {
 
 		systray.AddSeparator()
 
-		quitTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-			DefaultMessage: &i18n.Message{
-				ID:    "QuitTitle",
-				Other: "Quit",
-			},
-		})
-		quitDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-			DefaultMessage: &i18n.Message{
-				ID:    "QuitDescription",
-				Other: "Stop deej and quit",
-			},
-		})
+		quitTitle, quitDescription := getQuitItemText(d)
 		quit := systray.AddMenuItem(quitTitle, quitDescription)
 
 		// wait on things to happen
 		go func() {
 			for {
 				select {
-
 				// quit
 				case <-quit.ClickedCh:
 					logger.Info("Quit menu item clicked, stopping")

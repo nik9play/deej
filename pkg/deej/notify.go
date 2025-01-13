@@ -7,7 +7,6 @@ import (
 	"github.com/gen2brain/beeep"
 	"go.uber.org/zap"
 
-	"github.com/nik9play/deej/pkg/deej/icon"
 	"github.com/nik9play/deej/pkg/deej/util"
 )
 
@@ -45,7 +44,7 @@ func (tn *ToastNotifier) Notify(title string, message string) {
 			tn.logger.Errorw("Failed to create toast notification icon", "error", err)
 		}
 
-		if _, err = f.Write(icon.DeejLogo); err != nil {
+		if _, err = f.Write(DeejLogo); err != nil {
 			tn.logger.Errorw("Failed to write toast notification icon", "error", err)
 		}
 
