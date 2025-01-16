@@ -4,12 +4,9 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"os/signal"
 	"runtime"
 	"syscall"
-
-	"go.uber.org/zap"
 )
 
 // EnsureDirExists creates the given directory path if it doesn't already exist
@@ -40,6 +37,7 @@ func Linux() bool {
 // program if it receives an interrupt from the OS
 func SetupCloseHandler() chan os.Signal {
 	c := make(chan os.Signal)
+	//nolint:all
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	return c
@@ -50,29 +48,6 @@ func SetupCloseHandler() chan os.Signal {
 // This is currently only implemented for Windows
 func GetCurrentWindowProcessNames() ([]string, error) {
 	return getCurrentWindowProcessNames()
-}
-
-// OpenExternal spawns a detached window with the provided command and argument
-func OpenExternal(logger *zap.SugaredLogger, cmd string, arg string) error {
-
-	// use cmd for windows, bash for linux
-	execCommandArgs := []string{"cmd.exe", "/C", "start", "/b", cmd, arg}
-	if Linux() {
-		execCommandArgs = []string{"/bin/bash", "-c", fmt.Sprintf("%s %s", cmd, arg)}
-	}
-
-	command := exec.Command(execCommandArgs[0], execCommandArgs[1:]...)
-
-	if err := command.Run(); err != nil {
-		logger.Warnw("Failed to spawn detached process",
-			"command", cmd,
-			"argument", arg,
-			"error", err)
-
-		return fmt.Errorf("spawn detached proc: %w", err)
-	}
-
-	return nil
 }
 
 // NormalizeScalar "trims" the given float32 to 2 points of precision (e.g. 0.15442 -> 0.15)

@@ -2,12 +2,16 @@ package util
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 	"unsafe"
 
 	"github.com/lxn/win"
 	"github.com/mitchellh/go-ps"
+	"go.uber.org/zap"
 )
 
 const (
@@ -93,4 +97,18 @@ func getCurrentWindowProcessNames() ([]string, error) {
 	// cache & return whichever executable names we ended up with
 	lastGetCurrentWindowResult = result
 	return result, nil
+}
+
+func OpenExternal(logger *zap.SugaredLogger, filename string) error {
+	command := exec.Command(filepath.Join(os.Getenv("SYSTEMROOT"), "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", filename)
+
+	if err := command.Start(); err != nil {
+		logger.Warnw("Failed to open file",
+			"filename", filename,
+			"error", err)
+
+		return fmt.Errorf("open file proc: %w", err)
+	}
+
+	return nil
 }
