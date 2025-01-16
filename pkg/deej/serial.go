@@ -36,7 +36,6 @@ type SerialIO struct {
 	stopChannel chan struct{}
 	errChannel  chan error
 	wg          sync.WaitGroup
-	stopping    bool
 	port        serial.Port
 	mode        serial.Mode
 
@@ -164,7 +163,6 @@ func (sio *SerialIO) connect() error {
 
 // Start attempts to connect to our arduino chip
 func (sio *SerialIO) Start() {
-	sio.stopping = false
 	sio.stopChannel = make(chan struct{})
 	sio.logger.Info("Serial starting")
 	sio.wg.Add(1)
@@ -173,7 +171,6 @@ func (sio *SerialIO) Start() {
 
 // Stop signals us to shut down our serial connection, if one is active
 func (sio *SerialIO) Stop() {
-	sio.stopping = true
 	close(sio.stopChannel)
 
 	// Wait for all goroutines to finish
@@ -226,23 +223,22 @@ func (sio *SerialIO) setupOnConfigReload() {
 }
 
 // manages serial connection and retries
-//
-//go:generate goi18n extract -sourceLanguage en
 func (sio *SerialIO) managerLoop() {
 	defer sio.wg.Done()
 
 	for {
-		if sio.stopping {
-			sio.logger.Debug("managerLoop: stop var")
-			return
-		}
-
 		sio.logger.Infof("Trying serial connection")
 		err := sio.connect()
 		if err != nil {
-			sio.logger.Warnw("Serial connection error. Trying again... ", "err", err)
-			time.Sleep(2 * time.Second)
-			continue
+			sio.logger.Warnw("Serial connection error. Trying again...", "err", err)
+
+			select {
+			case <-sio.stopChannel:
+				sio.logger.Debug("managerLoop: stop signal")
+				return
+			case <-time.After(2 * time.Second):
+				continue
+			}
 		}
 
 		namedLogger := sio.logger.Named(strings.ToLower(sio.comPortToUse))
@@ -294,7 +290,6 @@ func (sio *SerialIO) managerLoop() {
 
 		case <-sio.stopChannel:
 			sio.logger.Debug("managerLoop: stop signal")
-			sio.stopping = true
 			return
 		}
 	}
