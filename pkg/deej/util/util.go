@@ -7,7 +7,23 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+
+	"go.uber.org/zap"
 )
+
+// OpenExternal opens a file using the default associated program
+func OpenExternal(logger *zap.SugaredLogger, filename string) error {
+	command := getOpenExternalCommand(filename)
+
+	if err := command.Run(); err != nil {
+		logger.Warnw("Failed to open file",
+			"filename", filename,
+			"error", err)
+		return fmt.Errorf("open file proc: %w", err)
+	}
+
+	return nil
+}
 
 // EnsureDirExists creates the given directory path if it doesn't already exist
 func EnsureDirExists(path string) error {
