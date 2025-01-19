@@ -38,8 +38,8 @@ jobs:
         if: runner.os == 'Linux'
         run: pkg/deej/scripts/linux/build-${{ matrix.mode }}.sh
 
-      - name: Upload builds
+      - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: deej-build
+          name: deej-${{ matrix.mode }}-${{ runner.os }}
           path: build/
