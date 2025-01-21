@@ -1,3 +1,3 @@
 #!/bin/sh
 
-./build.sh release
+./pkg/deej/scripts/linux/build.sh release

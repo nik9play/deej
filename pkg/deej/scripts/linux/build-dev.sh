@@ -1,3 +1,3 @@
 #!/bin/sh
 
-./build.sh dev
+./pkg/deej/scripts/linux/build.sh dev
