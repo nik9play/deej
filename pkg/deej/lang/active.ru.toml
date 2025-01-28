@@ -69,3 +69,11 @@ other = "Обновление аудио сессий, если что-то по
 [RescanSessionsTitle]
 hash = "sha1-7210421850570f6f4636552699ec2594b50bd21a"
 other = "Обновить аудио сессии"
+
+[StatusFalseTitle]
+hash = "sha1-19e7d23a07c7d1cad73f1fb35d1932919a586341"
+other = "Ожидание устройства..."
+
+[StatusTrueTitle]
+hash = "sha1-7622d374d096f1598032d4231946b83b17b1df66"
+other = "Подключено ({{.ComPort}})"

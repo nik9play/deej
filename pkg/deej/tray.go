@@ -58,6 +58,31 @@ func getQuitItemText(d *Deej) (string, string) {
 	return quitTitle, quitDescription
 }
 
+func getStatusItemTitle(d *Deej, state bool) string {
+	if state {
+		title := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "StatusTrueTitle",
+				Other: "Connected ({{.ComPort}})",
+			},
+			TemplateData: map[string]string{
+				"ComPort": d.serial.comPortToUse,
+			},
+		})
+
+		return title
+	}
+
+	title := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "StatusFalseTitle",
+			Other: "Waiting for device...",
+		},
+	})
+
+	return title
+}
+
 func (d *Deej) initializeTray(onDone func()) {
 	logger := d.logger.Named("tray")
 
@@ -76,11 +101,15 @@ func (d *Deej) initializeTray(onDone func()) {
 		refreshSessions := systray.AddMenuItem(rescanTitle, rescanDescription)
 		refreshSessions.SetIcon(RefreshSessionsIcon)
 
+		systray.AddSeparator()
+
 		if d.version != "" {
-			systray.AddSeparator()
 			versionInfo := systray.AddMenuItem(d.version, "")
 			versionInfo.Disable()
 		}
+
+		statusInfo := systray.AddMenuItem(getStatusItemTitle(d, d.serial.GetState()), "")
+		statusInfo.Disable()
 
 		systray.AddSeparator()
 
@@ -91,6 +120,8 @@ func (d *Deej) initializeTray(onDone func()) {
 		go func() {
 			for {
 				select {
+				case state := <-d.serial.stateChangedChannel:
+					statusInfo.SetTitle(getStatusItemTitle(d, state))
 				// quit
 				case <-quit.ClickedCh:
 					logger.Info("Quit menu item clicked, stopping")

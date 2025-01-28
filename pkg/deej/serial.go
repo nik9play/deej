@@ -33,11 +33,12 @@ type SerialIO struct {
 	deej   *Deej
 	logger *zap.SugaredLogger
 
-	stopChannel chan struct{}
-	errChannel  chan error
-	wg          sync.WaitGroup
-	port        serial.Port
-	mode        serial.Mode
+	stopChannel         chan struct{}
+	errChannel          chan error
+	stateChangedChannel chan bool
+	wg                  sync.WaitGroup
+	port                serial.Port
+	mode                serial.Mode
 
 	lastKnownNumSliders        int
 	currentSliderPercentValues []float32
@@ -68,6 +69,7 @@ func NewSerialIO(deej *Deej, logger *zap.SugaredLogger) (*SerialIO, error) {
 		logger:              logger,
 		port:                nil,
 		errChannel:          make(chan error, 1),
+		stateChangedChannel: make(chan bool),
 		sliderMoveConsumers: []chan SliderMoveEvent{},
 	}
 
@@ -161,6 +163,10 @@ func (sio *SerialIO) connect() error {
 	return nil
 }
 
+func (sio *SerialIO) GetState() bool {
+	return sio.port != nil
+}
+
 // Start attempts to connect to our arduino chip
 func (sio *SerialIO) Start() {
 	sio.stopChannel = make(chan struct{})
@@ -240,6 +246,8 @@ func (sio *SerialIO) managerLoop() {
 				continue
 			}
 		}
+
+		sio.stateChangedChannel <- true
 
 		namedLogger := sio.logger.Named(strings.ToLower(sio.comPortToUse))
 		namedLogger.Infow("Connected", "port", sio.port)
@@ -333,6 +341,7 @@ func (sio *SerialIO) closePort() error {
 
 	sio.logger.Debug("Serial connection closed")
 	sio.port = nil
+	sio.stateChangedChannel <- false
 	return nil
 }
 
