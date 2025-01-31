@@ -41,7 +41,7 @@ type Deej struct {
 var langFS embed.FS
 
 // NewDeej creates a Deej instance
-func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
+func NewDeej(logger *zap.SugaredLogger, verbose bool, configPath string) (*Deej, error) {
 	logger = logger.Named("deej")
 
 	bundle := i18n.NewBundle(language.English)
@@ -59,7 +59,7 @@ func NewDeej(logger *zap.SugaredLogger, verbose bool) (*Deej, error) {
 		return nil, fmt.Errorf("create new ToastNotifier: %w", err)
 	}
 
-	config, err := NewConfig(logger, notifier)
+	config, err := NewConfig(logger, notifier, configPath)
 	if err != nil {
 		logger.Errorw("Failed to create Config", "error", err)
 		return nil, fmt.Errorf("create new Config: %w", err)

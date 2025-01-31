@@ -38,10 +38,11 @@ type CanonicalConfig struct {
 
 	userConfig     *viper.Viper
 	internalConfig *viper.Viper
+
+	configPath string
 }
 
 const (
-	userConfigFilepath     = "config.yaml"
 	internalConfigFilepath = "preferences.yaml"
 
 	userConfigName     = "config"
@@ -74,7 +75,7 @@ var defaultSliderMapping = func() *sliderMap {
 }()
 
 // NewConfig creates a config instance for the deej object and sets up viper instances for deej's config files
-func NewConfig(logger *zap.SugaredLogger, notifier Notifier) (*CanonicalConfig, error) {
+func NewConfig(logger *zap.SugaredLogger, notifier Notifier, configPath string) (*CanonicalConfig, error) {
 	logger = logger.Named("config")
 
 	cc := &CanonicalConfig{
@@ -82,6 +83,7 @@ func NewConfig(logger *zap.SugaredLogger, notifier Notifier) (*CanonicalConfig, 
 		notifier:           notifier,
 		reloadConsumers:    []chan bool{},
 		stopWatcherChannel: make(chan bool),
+		configPath:         configPath,
 	}
 
 	// distinguish between the user-provided config (config.yaml) and the internal config (logs/preferences.yaml)
@@ -111,11 +113,11 @@ func NewConfig(logger *zap.SugaredLogger, notifier Notifier) (*CanonicalConfig, 
 
 // Load reads deej's config files from disk and tries to parse them
 func (cc *CanonicalConfig) Load(localizer *i18n.Localizer) error {
-	cc.logger.Debugw("Loading config", "path", userConfigFilepath)
+	cc.logger.Debugw("Loading config", "path", cc.configPath)
 
 	// make sure it exists
-	if !util.FileExists(userConfigFilepath) {
-		cc.logger.Warnw("Config file not found", "path", userConfigFilepath)
+	if !util.FileExists(cc.configPath) {
+		cc.logger.Warnw("Config file not found", "path", cc.configPath)
 
 		configNotFoundTitle := localizer.MustLocalize(&i18n.LocalizeConfig{
 			DefaultMessage: &i18n.Message{
@@ -129,12 +131,12 @@ func (cc *CanonicalConfig) Load(localizer *i18n.Localizer) error {
 				Other: "{{.FilePath}} must be in the same directory as deej. Please re-launch.",
 			},
 			TemplateData: map[string]string{
-				"FilePath": userConfigFilepath,
+				"FilePath": cc.configPath,
 			},
 		})
 		cc.notifier.Notify(configNotFoundTitle, configNotFoundDescription)
 
-		return fmt.Errorf("config file doesn't exist: %s", userConfigFilepath)
+		return fmt.Errorf("config file doesn't exist: %s", cc.configPath)
 	}
 
 	// load the user config
@@ -155,7 +157,7 @@ func (cc *CanonicalConfig) Load(localizer *i18n.Localizer) error {
 					Other: "Please make sure {{.FilePath}} is in a valid YAML format.",
 				},
 				TemplateData: map[string]string{
-					"FilePath": userConfigFilepath,
+					"FilePath": cc.configPath,
 				},
 			})
 			cc.notifier.Notify(configInvalidTitle, configInvalidDescription)
@@ -209,7 +211,7 @@ func (cc *CanonicalConfig) SubscribeToChanges() chan bool {
 // WatchConfigFileChanges starts watching for configuration file changes
 // and attempts reloading the config when they happen
 func (cc *CanonicalConfig) WatchConfigFileChanges(localizer *i18n.Localizer) {
-	cc.logger.Debugw("Starting to watch user config file for changes", "path", userConfigFilepath)
+	cc.logger.Debugw("Starting to watch user config file for changes", "path", cc.configPath)
 
 	const (
 		minTimeBetweenReloadAttempts = time.Millisecond * 500
