@@ -33,17 +33,17 @@ type SerialIO struct {
 	deej   *Deej
 	logger *zap.SugaredLogger
 
-	stopChannel         chan struct{}
-	errChannel          chan error
-	stateChangedChannel chan bool
-	wg                  sync.WaitGroup
-	port                serial.Port
-	mode                serial.Mode
+	stopChannel chan struct{}
+	errChannel  chan error
+	wg          sync.WaitGroup
+	port        serial.Port
+	mode        serial.Mode
 
 	lastKnownNumSliders        int
 	currentSliderPercentValues []float32
 
-	sliderMoveConsumers []chan SliderMoveEvent
+	sliderMoveConsumers  []chan SliderMoveEvent
+	stateChangeConsumers []chan bool
 }
 
 var ErrNoSerialPorts = errors.New("no serial ports found")
@@ -65,12 +65,12 @@ func NewSerialIO(deej *Deej, logger *zap.SugaredLogger) (*SerialIO, error) {
 	logger = logger.Named("serial")
 
 	sio := &SerialIO{
-		deej:                deej,
-		logger:              logger,
-		port:                nil,
-		errChannel:          make(chan error, 1),
-		stateChangedChannel: make(chan bool),
-		sliderMoveConsumers: []chan SliderMoveEvent{},
+		deej:                 deej,
+		logger:               logger,
+		port:                 nil,
+		errChannel:           make(chan error, 1),
+		sliderMoveConsumers:  []chan SliderMoveEvent{},
+		stateChangeConsumers: []chan bool{},
 	}
 
 	logger.Debug("Created serial i/o instance")
@@ -195,6 +195,19 @@ func (sio *SerialIO) SubscribeToSliderMoveEvents() chan SliderMoveEvent {
 	return ch
 }
 
+func (sio *SerialIO) SubscribeToStateChangeEvent() chan bool {
+	ch := make(chan bool)
+	sio.stateChangeConsumers = append(sio.stateChangeConsumers, ch)
+
+	return ch
+}
+
+func (sio *SerialIO) sendStateChangeEvent(state bool) {
+	for _, consumer := range sio.stateChangeConsumers {
+		consumer <- state
+	}
+}
+
 func (sio *SerialIO) setupOnConfigReload() {
 	configReloadedChannel := sio.deej.config.SubscribeToChanges()
 
@@ -247,7 +260,7 @@ func (sio *SerialIO) managerLoop() {
 			}
 		}
 
-		sio.stateChangedChannel <- true
+		sio.sendStateChangeEvent(true)
 
 		namedLogger := sio.logger.Named(strings.ToLower(sio.comPortToUse))
 		namedLogger.Infow("Connected", "port", sio.port)
@@ -341,7 +354,7 @@ func (sio *SerialIO) closePort() error {
 
 	sio.logger.Debug("Serial connection closed")
 	sio.port = nil
-	sio.stateChangedChannel <- false
+	sio.sendStateChangeEvent(false)
 	return nil
 }
 

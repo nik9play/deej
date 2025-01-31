@@ -1,6 +1,9 @@
 package deej
 
 import (
+	"strconv"
+	"strings"
+
 	"github.com/getlantern/systray"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
@@ -58,29 +61,37 @@ func getQuitItemText(d *Deej) (string, string) {
 	return quitTitle, quitDescription
 }
 
-func getStatusItemTitle(d *Deej, state bool) string {
-	if state {
-		title := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+func getStatusItemTitle(d *Deej) string {
+	var title string
+
+	if d.serial.GetState() {
+		title = d.localizer.MustLocalize(&i18n.LocalizeConfig{
 			DefaultMessage: &i18n.Message{
 				ID:    "StatusTrueTitle",
-				Other: "Connected ({{.ComPort}})",
+				Other: "Connected to {{.ComPort}}",
 			},
 			TemplateData: map[string]string{
 				"ComPort": d.serial.comPortToUse,
 			},
 		})
-
-		return title
+	} else {
+		title = d.localizer.MustLocalize(&i18n.LocalizeConfig{
+			DefaultMessage: &i18n.Message{
+				ID:    "StatusFalseTitle",
+				Other: "Waiting for device...",
+			},
+		})
 	}
 
-	title := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-		DefaultMessage: &i18n.Message{
-			ID:    "StatusFalseTitle",
-			Other: "Waiting for device...",
-		},
-	})
-
 	return title
+}
+
+func getValuesString(d *Deej) string {
+	strs := make([]string, len(d.serial.currentSliderPercentValues))
+	for i, num := range d.serial.currentSliderPercentValues {
+		strs[i] = strconv.FormatFloat(float64(num)*100, 'f', 0, 32)
+	}
+	return strings.Join(strs, " | ")
 }
 
 func (d *Deej) initializeTray(onDone func()) {
@@ -90,8 +101,17 @@ func (d *Deej) initializeTray(onDone func()) {
 		logger.Debug("Tray instance ready")
 
 		systray.SetTemplateIcon(DeejLogo, DeejLogo)
+
 		systray.SetTitle("deej")
-		systray.SetTooltip("deej")
+
+		setTooltip := func() {
+			title := "deej\n" + getStatusItemTitle(d)
+			if d.serial.GetState() {
+				title += "\n" + getValuesString(d)
+			}
+			systray.SetTooltip(title)
+		}
+		setTooltip()
 
 		configTitle, configDescription := getConfigItemText(d)
 		editConfig := systray.AddMenuItem(configTitle, configDescription)
@@ -103,25 +123,51 @@ func (d *Deej) initializeTray(onDone func()) {
 
 		systray.AddSeparator()
 
+		statusInfo := systray.AddMenuItem(getStatusItemTitle(d), "")
+		statusInfo.Disable()
+
+		valuesInfo := systray.AddMenuItem("...", "")
+		valuesInfo.Disable()
+		valuesInfo.Hide()
+
+		setValuesInfo := func() {
+			if d.serial.GetState() {
+				valuesInfo.SetTitle(getValuesString(d))
+				valuesInfo.Show()
+			} else {
+				valuesInfo.Hide()
+			}
+		}
+		setValuesInfo()
+
 		if d.version != "" {
 			versionInfo := systray.AddMenuItem(d.version, "")
 			versionInfo.Disable()
 		}
-
-		statusInfo := systray.AddMenuItem(getStatusItemTitle(d, d.serial.GetState()), "")
-		statusInfo.Disable()
 
 		systray.AddSeparator()
 
 		quitTitle, quitDescription := getQuitItemText(d)
 		quit := systray.AddMenuItem(quitTitle, quitDescription)
 
+		sliderMovedChannel := d.serial.SubscribeToSliderMoveEvents()
+		stateChangeChannel := d.serial.SubscribeToStateChangeEvent()
+
 		// wait on things to happen
 		go func() {
 			for {
 				select {
-				case state := <-d.serial.stateChangedChannel:
-					statusInfo.SetTitle(getStatusItemTitle(d, state))
+				// slider moved
+				case <-sliderMovedChannel:
+					setTooltip()
+					setValuesInfo()
+
+				// connection state changed
+				case <-stateChangeChannel:
+					setTooltip()
+					setValuesInfo()
+					statusInfo.SetTitle(getStatusItemTitle(d))
+
 				// quit
 				case <-quit.ClickedCh:
 					logger.Info("Quit menu item clicked, stopping")
