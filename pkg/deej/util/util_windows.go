@@ -9,8 +9,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/lxn/win"
 	"github.com/mitchellh/go-ps"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -53,7 +53,7 @@ func getCurrentWindowProcessNames() ([]string, error) {
 
 		// get the child window's real PID
 		var childPID uint32
-		win.GetWindowThreadProcessId((win.HWND)(unsafe.Pointer(childHWND)), &childPID)
+		windows.GetWindowThreadProcessId((windows.HWND)(unsafe.Pointer(childHWND)), &childPID)
 
 		// compare it to the parent's - if they're different, add the child window's process to our list of process names
 		if childPID != *ownerPID {
@@ -70,11 +70,11 @@ func getCurrentWindowProcessNames() ([]string, error) {
 	}
 
 	// get the current foreground window
-	hwnd := win.GetForegroundWindow()
+	hwnd := windows.GetForegroundWindow()
 	var ownerPID uint32
 
 	// get its PID and put it in our window info struct
-	win.GetWindowThreadProcessId(hwnd, &ownerPID)
+	windows.GetWindowThreadProcessId(hwnd, &ownerPID)
 
 	// check for system PID (0)
 	if ownerPID == 0 {
@@ -91,7 +91,7 @@ func getCurrentWindowProcessNames() ([]string, error) {
 	result = append(result, process.Executable())
 
 	// iterate its child windows, adding their names too
-	win.EnumChildWindows(hwnd, syscall.NewCallback(enumChildWindowsCallback), (uintptr)(unsafe.Pointer(&ownerPID)))
+	windows.EnumChildWindows(hwnd, syscall.NewCallback(enumChildWindowsCallback), (unsafe.Pointer(&ownerPID)))
 
 	// cache & return whichever executable names we ended up with
 	lastGetCurrentWindowResult = result
