@@ -9,7 +9,7 @@ require (
 	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
 	github.com/go-ole/go-ole v1.3.0
 	github.com/jeandeaual/go-locale v0.0.0-20241217141322-fcc2cadd6f08
-	github.com/jfreymuth/pulse v0.0.0-20200608153616-84b2d752b9d4
+	github.com/jfreymuth/pulse v0.1.1
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/moutend/go-wca v0.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.4.1
