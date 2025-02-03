@@ -10,10 +10,10 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/text/language"
 
-	"github.com/BurntSushi/toml"
 	"github.com/jeandeaual/go-locale"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/nik9play/deej/pkg/deej/util"
+	"github.com/pelletier/go-toml/v2"
 )
 
 const (

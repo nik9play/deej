@@ -4,7 +4,6 @@ go 1.23.2
 
 require (
 	fyne.io/systray v1.11.0
-	github.com/BurntSushi/toml v1.4.0
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/gen2brain/beeep v0.0.0-20240516210008-9c006672e7f4
 	github.com/go-ole/go-ole v1.3.0
@@ -13,6 +12,7 @@ require (
 	github.com/mitchellh/go-ps v1.0.0
 	github.com/moutend/go-wca v0.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.4.1
+	github.com/pelletier/go-toml/v2 v2.2.2
 	github.com/spf13/viper v1.19.0
 	github.com/thoas/go-funk v0.9.3
 	go.bug.st/serial v1.6.2
@@ -29,7 +29,6 @@ require (
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
-	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
