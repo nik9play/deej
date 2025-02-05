@@ -37,6 +37,9 @@ const (
 	// targets the currently active window (Windows-only, experimental)
 	specialTargetCurrentWindow = "current"
 
+	// targets the currently active fullscreen window (Windows-only, experimental)
+	specialTargetCurrentFullscreenWindow = "current.fullscreen"
+
 	// targets all currently unmapped sessions (experimental)
 	specialTargetAllUnmapped = "unmapped"
 
@@ -285,13 +288,19 @@ func (m *sessionMap) resolveTarget(target string) []string {
 }
 
 func (m *sessionMap) applyTargetTransform(specialTargetName string) []string {
+	checkFullscreen := false
 
 	// select the transformation based on its name
 	switch specialTargetName {
 
+	// get current active fullscreen window
+	case specialTargetCurrentFullscreenWindow:
+		checkFullscreen = true
+		fallthrough
+
 	// get current active window
 	case specialTargetCurrentWindow:
-		currentWindowProcessNames, err := util.GetCurrentWindowProcessNames()
+		currentWindowProcessNames, err := util.GetCurrentWindowProcessNames(checkFullscreen)
 
 		// silently ignore errors here, as this is on deej's "hot path" (and it could just mean the user's running linux)
 		if err != nil {

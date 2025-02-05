@@ -61,8 +61,8 @@ func SetupCloseHandler() chan os.Signal {
 // GetCurrentWindowProcessNames returns the process names (including extension, if applicable)
 // of the current foreground window. This includes child processes belonging to the window.
 // This is currently only implemented for Windows
-func GetCurrentWindowProcessNames() ([]string, error) {
-	return getCurrentWindowProcessNames()
+func GetCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
+	return getCurrentWindowProcessNames(checkFullscreen)
 }
 
 // NormalizeScalar "trims" the given float32 to 2 points of precision (e.g. 0.15442 -> 0.15)

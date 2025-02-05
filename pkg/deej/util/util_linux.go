@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-func getCurrentWindowProcessNames() ([]string, error) {
+func getCurrentWindowProcessNames(_ bool) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 

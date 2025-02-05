@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/mitchellh/go-ps"
+	"github.com/nik9play/deej/pkg/win"
 	"golang.org/x/sys/windows"
 )
 
@@ -22,7 +23,7 @@ var (
 	lastGetCurrentWindowCall   = time.Now()
 )
 
-func getCurrentWindowProcessNames() ([]string, error) {
+func getCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
 
 	// apply an internal cooldown on this function to avoid calling windows API functions too frequently.
 	// return a cached value during that cooldown
@@ -71,6 +72,13 @@ func getCurrentWindowProcessNames() ([]string, error) {
 
 	// get the current foreground window
 	hwnd := windows.GetForegroundWindow()
+
+	if checkFullscreen {
+		if !isWindowFullscreen(hwnd) {
+			return nil, nil
+		}
+	}
+
 	var ownerPID uint32
 
 	// get its PID and put it in our window info struct
@@ -100,4 +108,59 @@ func getCurrentWindowProcessNames() ([]string, error) {
 
 func getOpenExternalCommand(filename string) *exec.Cmd {
 	return exec.Command(filepath.Join(os.Getenv("SYSTEMROOT"), "System32", "rundll32.exe"), "url.dll,FileProtocolHandler", filename)
+}
+
+// check if the window is in fullscreen mode
+//
+// inspired by https://chromium.googlesource.com/chromium/src/+/refs/tags/134.0.6996.1/ui/base/fullscreen_win.cc
+func isWindowFullscreen(hwnd windows.HWND) bool {
+	var state uint32
+
+	// this function checks for fullscreen apps in exclusive mode
+	err := win.SHQueryUserNotificationState(&state)
+	if err != nil {
+		return false
+	}
+
+	if state == win.QUNS_RUNNING_D3D_FULL_SCREEN || state == win.QUNS_PRESENTATION_MODE {
+		return true
+	}
+
+	// get the monitor where the window is located
+	var wndRect win.RECT
+	err = win.GetWindowRect(hwnd, &wndRect)
+	if err != nil {
+		return false
+	}
+
+	monitor, err := win.MonitorFromRect(&wndRect, win.MONITOR_DEFAULTTONULL)
+	if err != nil {
+		return false
+	}
+
+	var monitorInfo win.MONITORINFO
+	monitorInfo.CbSize = uint32(unsafe.Sizeof(monitorInfo))
+	err = win.GetMonitorInfo(monitor, &monitorInfo)
+	if err != nil {
+		return false
+	}
+
+	// the window should be at least as large as the monitor
+	if !win.IntersectRect(&wndRect, &wndRect, &monitorInfo.Monitor) || !win.EqualRect(&wndRect, &monitorInfo.Monitor) {
+		return false
+	}
+
+	style, err := win.GetWindowLong(hwnd, win.GWL_STYLE)
+	if err != nil {
+		return false
+	}
+
+	exStyle, err := win.GetWindowLong(hwnd, win.GWL_EXSTYLE)
+	if err != nil {
+		return false
+	}
+
+	// I doubt that this check is necessary
+	return !((style&(win.WS_DLGFRAME|win.WS_THICKFRAME)) != 0 ||
+		(exStyle&(win.WS_EX_WINDOWEDGE|win.WS_EX_TOOLWINDOW)) != 0)
 }
