@@ -124,7 +124,30 @@ type MONITORINFO struct {
 	Flags uint32
 }
 
-func retErr(r1, _ uintptr, lastErr error) (err error) {
+func SHQueryUserNotificationState(state *uint32) (err error) {
+	r1, _, lastErr := procSHQueryUserNotificationState.Call(uintptr(unsafe.Pointer(state)))
+
+	if r1 != 0 {
+		err = lastErr
+	}
+
+	return
+}
+
+func GetWindowRect(hwnd windows.HWND, rect *RECT) (err error) {
+	r1, _, lastErr := procGetWindowRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(rect)))
+
+	if r1 != 1 {
+		err = lastErr
+	}
+
+	return
+}
+
+func MonitorFromRect(rect *RECT, flags uint32) (handle windows.Handle, err error) {
+	r1, _, lastErr := procMonitorFromRect.Call(uintptr(unsafe.Pointer(rect)), uintptr(flags))
+	handle = windows.Handle(r1)
+
 	if r1 == 0 {
 		err = lastErr
 	}
@@ -132,27 +155,14 @@ func retErr(r1, _ uintptr, lastErr error) (err error) {
 	return
 }
 
-func SHQueryUserNotificationState(state *uint32) error {
-	return retErr(procSHQueryUserNotificationState.Call(uintptr(unsafe.Pointer(state))))
-}
+func GetMonitorInfo(handle windows.Handle, mi *MONITORINFO) (err error) {
+	r1, _, lastErr := procGetMonitorInfo.Call(uintptr(handle), uintptr(unsafe.Pointer(mi)))
 
-func GetWindowRect(hwnd windows.HWND, rect *RECT) error {
-	return retErr(procGetWindowRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(rect))))
-}
-
-func MonitorFromRect(rect *RECT, flags uint32) (handle windows.Handle, err error) {
-	r0, _, e1 := procMonitorFromRect.Call(uintptr(unsafe.Pointer(rect)), uintptr(flags))
-	handle = windows.Handle(r0)
-
-	if r0 == 0 {
-		err = e1
+	if r1 == 0 {
+		err = lastErr
 	}
 
 	return
-}
-
-func GetMonitorInfo(handle windows.Handle, mi *MONITORINFO) error {
-	return retErr(procGetMonitorInfo.Call(uintptr(handle), uintptr(unsafe.Pointer(mi))))
 }
 
 func IntersectRect(rectOut *RECT, rect1 *RECT, rect2 *RECT) bool {
