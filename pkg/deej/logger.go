@@ -2,6 +2,7 @@ package deej
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -14,14 +15,19 @@ const (
 	buildTypeNone    = ""
 	buildTypeDev     = "dev"
 	buildTypeRelease = "release"
-
-	logDirectory = "logs"
-	logFilename  = "deej-latest-run.log"
+	logFilename      = "deej-latest-run.log"
 )
 
 // NewLogger provides a logger instance for the whole program
 func NewLogger(buildType string) (*zap.SugaredLogger, error) {
 	var loggerConfig zap.Config
+
+	ex, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("get executable dir: %w", err)
+	}
+
+	logDirectory := filepath.Join(filepath.Dir(ex), "logs")
 
 	// release: info and above, log to file only (no UI)
 	if buildType == buildTypeRelease {

@@ -41,6 +41,13 @@ func (d *Deej) recoverFromPanic() {
 	// if we got here, we're recovering from a panic!
 	now := time.Now()
 
+	ex, err := os.Executable()
+	if err != nil {
+		panic(fmt.Errorf("get executable dir: %w", err))
+	}
+
+	logDirectory := filepath.Join(filepath.Dir(ex), "logs")
+
 	// that would suck
 	if err := util.EnsureDirExists(logDirectory); err != nil {
 		panic(fmt.Errorf("ensure crashlog dir exists: %w", err))
