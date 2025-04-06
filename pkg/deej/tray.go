@@ -27,6 +27,40 @@ func getConfigItemText(d *Deej) (string, string) {
 	return configTitle, configDescription
 }
 
+func getSettingsItemText(d *Deej) (string, string) {
+	configTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "SettingsTitle",
+			Other: "Settings",
+		},
+	})
+	configDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "SettingsDescription",
+			Other: "Settings",
+		},
+	})
+
+	return configTitle, configDescription
+}
+
+func getAutostartItemText(d *Deej) (string, string) {
+	configTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "AutostartTitle",
+			Other: "Run at startup",
+		},
+	})
+	configDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "AutostartDescription",
+			Other: "deej will launch at startup",
+		},
+	})
+
+	return configTitle, configDescription
+}
+
 func getRescanItemText(d *Deej) (string, string) {
 	rescanTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
 		DefaultMessage: &i18n.Message{
@@ -113,9 +147,19 @@ func (d *Deej) initializeTray(onDone func()) {
 		}
 		setTooltip()
 
+		settingsTitle, settingsDescription := getSettingsItemText(d)
+		settings := systray.AddMenuItem(settingsTitle, settingsDescription)
+		settings.SetIcon(EditConfigIcon)
+
 		configTitle, configDescription := getConfigItemText(d)
-		editConfig := systray.AddMenuItem(configTitle, configDescription)
-		editConfig.SetIcon(EditConfigIcon)
+		editConfig := settings.AddSubMenuItem(configTitle, configDescription)
+
+		autostartTitle, autostartDescription := getAutostartItemText(d)
+		autostart := settings.AddSubMenuItemCheckbox(autostartTitle, autostartDescription, util.GetAutostartState())
+
+		if util.Linux() {
+			autostart.Hide()
+		}
 
 		rescanTitle, rescanDescription := getRescanItemText(d)
 		refreshSessions := systray.AddMenuItem(rescanTitle, rescanDescription)
@@ -180,6 +224,14 @@ func (d *Deej) initializeTray(onDone func()) {
 
 					if err := util.OpenExternal(logger, d.config.configPath); err != nil {
 						logger.Warnw("Failed to open config file for editing", "error", err)
+					}
+
+				case <-autostart.ClickedCh:
+					util.SetAutostartState(!util.GetAutostartState())
+					if util.GetAutostartState() {
+						autostart.Check()
+					} else {
+						autostart.Uncheck()
 					}
 
 				// refresh sessions

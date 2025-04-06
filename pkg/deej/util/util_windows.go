@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -12,6 +13,7 @@ import (
 	"github.com/mitchellh/go-ps"
 	"github.com/nik9play/deej/pkg/win"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 const (
@@ -163,4 +165,55 @@ func isWindowFullscreen(hwnd windows.HWND) bool {
 	// I doubt that this check is necessary
 	return !((style&(win.WS_DLGFRAME|win.WS_THICKFRAME)) != 0 ||
 		(exStyle&(win.WS_EX_WINDOWEDGE|win.WS_EX_TOOLWINDOW)) != 0)
+}
+
+const registryValue = "deej"
+
+func getAutostartState() bool {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+
+	s, _, err := k.GetStringValue(registryValue)
+	if err != nil {
+		return false
+	}
+
+	if s == "" {
+		return false
+	}
+
+	return true
+}
+
+func setAutostartState(state bool) error {
+	k, err := registry.OpenKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("open key: %w", err)
+	}
+	defer k.Close()
+
+	if state {
+		ex, err := os.Executable()
+
+		if err != nil {
+			return fmt.Errorf("get executable path: %w", err)
+		}
+
+		value := fmt.Sprintf("\"%v\" %v", ex, strings.Join(os.Args[1:], " "))
+
+		err = k.SetStringValue(registryValue, value)
+		if err != nil {
+			return fmt.Errorf("set string: %w", err)
+		}
+	} else {
+		err := k.DeleteValue(registryValue)
+		if err != nil {
+			return fmt.Errorf("delete string: %w", err)
+		}
+	}
+
+	return nil
 }

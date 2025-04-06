@@ -65,6 +65,14 @@ func GetCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
 	return getCurrentWindowProcessNames(checkFullscreen)
 }
 
+func GetAutostartState() bool {
+	return getAutostartState()
+}
+
+func SetAutostartState(state bool) error {
+	return setAutostartState(state)
+}
+
 // NormalizeScalar "trims" the given float32 to 2 points of precision (e.g. 0.15442 -> 0.15)
 // This is used both for windows core audio volume levels and for cleaning up slider level values from serial
 func NormalizeScalar(v float32) float32 {

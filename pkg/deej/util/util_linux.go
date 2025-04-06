@@ -12,3 +12,13 @@ func getCurrentWindowProcessNames(_ bool) ([]string, error) {
 func getOpenExternalCommand(filename string) *exec.Cmd {
 	return exec.Command("xdg-open", filename)
 }
+
+// do nothing
+func getAutostartState() bool {
+	return false
+}
+
+// do nothing
+func setAutostartState(_ bool) error {
+	return errors.New("not implemented")
+}
