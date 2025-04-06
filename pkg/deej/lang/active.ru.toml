@@ -1,3 +1,11 @@
+[AutostartDescription]
+hash = "sha1-ac5651a689fdde61786dd985297960f2dae72325"
+other = "Запускать deej вместе с системой"
+
+[AutostartTitle]
+hash = "sha1-fbb69d25512ad988678cb52b7cb4f713ac7649d2"
+other = "Запускать вместе с системой"
+
 [ComPortConnectedNotificationDescription]
 hash = "sha1-89d7bd7e7a7a2af598436a506b49e56b522fc07b"
 other = "Успешное подключение к deej."
@@ -64,16 +72,24 @@ other = "Выйти"
 
 [RescanSessionsDescription]
 hash = "sha1-3d8a2e429c29a75c484ebb38cf3d70ecf0906bd7"
-other = "Обновление аудио сессий, если что-то пошло не так"
+other = "Обновление аудиосессий, если что-то пошло не так"
 
 [RescanSessionsTitle]
 hash = "sha1-7210421850570f6f4636552699ec2594b50bd21a"
-other = "Обновить аудио сессии"
+other = "Обновить аудиосессии"
+
+[SettingsDescription]
+hash = "sha1-c7f73bb54d928922c3838bb789ee9fb8a5b1eb37"
+other = "Настройки"
+
+[SettingsTitle]
+hash = "sha1-c7f73bb54d928922c3838bb789ee9fb8a5b1eb37"
+other = "Настройки"
 
 [StatusFalseTitle]
 hash = "sha1-19e7d23a07c7d1cad73f1fb35d1932919a586341"
 other = "Ожидание устройства..."
 
 [StatusTrueTitle]
-hash = "sha1-7622d374d096f1598032d4231946b83b17b1df66"
-other = "Подключено ({{.ComPort}})"
+hash = "sha1-e2481b763240c7691a8f911b81df34bd39bf21a0"
+other = "Подключен к {{.ComPort}}"
