@@ -2,7 +2,8 @@ package deej
 
 import (
 	"fmt"
-	"path"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,12 +44,7 @@ type CanonicalConfig struct {
 }
 
 const (
-	internalConfigFilepath = "preferences.yaml"
-
-	userConfigName     = "config"
 	internalConfigName = "preferences"
-
-	userConfigPath = "."
 
 	configType = "yaml"
 
@@ -65,7 +61,6 @@ const (
 )
 
 // has to be defined as a non-constant because we're using path.Join
-var internalConfigPath = path.Join(".", logDirectory)
 
 var defaultSliderMapping = func() *sliderMap {
 	emptyMap := newSliderMap()
@@ -77,6 +72,20 @@ var defaultSliderMapping = func() *sliderMap {
 // NewConfig creates a config instance for the deej object and sets up viper instances for deej's config files
 func NewConfig(logger *zap.SugaredLogger, notifier Notifier, configPath string) (*CanonicalConfig, error) {
 	logger = logger.Named("config")
+
+	ex, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("get executable dir: %w", err)
+	}
+
+	// set config path to exe dir, if custom path is not provided
+	if configPath == "" {
+		configPath = filepath.Join(filepath.Dir(ex), "config.yaml")
+	}
+
+	userConfigName := filepath.Base(configPath)
+	configDir := filepath.Dir(configPath)
+	internalConfigDir := filepath.Join(filepath.Dir(ex), "logs")
 
 	cc := &CanonicalConfig{
 		logger:             logger,
@@ -90,7 +99,7 @@ func NewConfig(logger *zap.SugaredLogger, notifier Notifier, configPath string) 
 	userConfig := viper.New()
 	userConfig.SetConfigName(userConfigName)
 	userConfig.SetConfigType(configType)
-	userConfig.AddConfigPath(userConfigPath)
+	userConfig.AddConfigPath(configDir)
 
 	userConfig.SetDefault(configKeySliderMapping, map[string][]string{})
 	userConfig.SetDefault(configKeyInvertSliders, false)
@@ -101,7 +110,7 @@ func NewConfig(logger *zap.SugaredLogger, notifier Notifier, configPath string) 
 	internalConfig := viper.New()
 	internalConfig.SetConfigName(internalConfigName)
 	internalConfig.SetConfigType(configType)
-	internalConfig.AddConfigPath(internalConfigPath)
+	internalConfig.AddConfigPath(internalConfigDir)
 
 	cc.userConfig = userConfig
 	cc.internalConfig = internalConfig

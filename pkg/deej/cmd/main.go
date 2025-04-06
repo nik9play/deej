@@ -19,8 +19,8 @@ var (
 func init() {
 	flag.BoolVar(&verbose, "verbose", false, "show verbose logs (useful for debugging serial)")
 	flag.BoolVar(&verbose, "v", false, "shorthand for --verbose")
-	flag.StringVar(&configPath, "config", "config.yaml", "custom config file path")
-	flag.StringVar(&configPath, "c", "config.yaml", "shorthand for --config")
+	flag.StringVar(&configPath, "config", "", "custom config file path")
+	flag.StringVar(&configPath, "c", "", "shorthand for --config")
 	flag.Parse()
 }
 
