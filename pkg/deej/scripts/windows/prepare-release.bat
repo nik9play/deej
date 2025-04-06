@@ -20,8 +20,8 @@ SET "DEEJ_ROOT=%CD%"
 POPD
 
 MKDIR "%DEEJ_ROOT%\releases\%1" 2> NUL
-MOVE /Y "%DEEJ_ROOT%\build\deej-release.exe" "%DEEJ_ROOT%\releases\%1\deej.exe" >NUL 2>&1
-MOVE /Y "%DEEJ_ROOT%\build\deej-dev.exe" "%DEEJ_ROOT%\releases\%1\deej-debug.exe" >NUL 2>&1
+COPY /Y "%DEEJ_ROOT%\build\deej-release.exe" "%DEEJ_ROOT%\releases\%1\deej.exe" >NUL 2>&1
+COPY /Y "%DEEJ_ROOT%\build\deej-dev.exe" "%DEEJ_ROOT%\releases\%1\deej-debug.exe" >NUL 2>&1
 COPY /Y "%DEEJ_ROOT%\config_examples\config.example.yaml" "%DEEJ_ROOT%\releases\%1\config.yaml" >NUL 2>&1
 COPY /Y "%DEEJ_ROOT%\pkg\deej\scripts\misc\release-notes.txt" "%DEEJ_ROOT%\releases\%1\notes.txt" >NUL 2>&1
 
