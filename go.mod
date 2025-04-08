@@ -15,7 +15,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.2
 	github.com/spf13/viper v1.19.0
 	github.com/thoas/go-funk v0.9.3
-	go.bug.st/serial v1.6.2
+	go.bug.st/serial v1.6.4
 	go.uber.org/zap v1.27.0
 	golang.org/x/sys v0.30.0
 	golang.org/x/text v0.19.0
