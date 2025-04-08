@@ -177,13 +177,9 @@ func EqualRect(rect1 *RECT, rect2 *RECT) bool {
 	return r0 != 0
 }
 
-func GetWindowLong(hwnd windows.HWND, nindex int32) (style uintptr, err error) {
-	r0, _, e1 := procGetWindowLong.Call(uintptr(hwnd), uintptr(nindex))
+func GetWindowLongPtr(hwnd windows.HWND, nindex int32) (style uintptr) {
+	r0, _, _ := procGetWindowLong.Call(uintptr(hwnd), uintptr(nindex))
 	style = r0
-
-	if r0 == 0 {
-		err = e1
-	}
 
 	return
 }

@@ -77,7 +77,8 @@ func getCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
 
 	if checkFullscreen {
 		if !isWindowFullscreen(hwnd) {
-			return nil, nil
+			lastGetCurrentWindowResult = nil
+			return nil, fmt.Errorf("window is not in fullscreen mode")
 		}
 	}
 
@@ -149,18 +150,14 @@ func isWindowFullscreen(hwnd windows.HWND) bool {
 
 	// the window should be at least as large as the monitor
 	if !win.IntersectRect(&wndRect, &wndRect, &monitorInfo.Monitor) || !win.EqualRect(&wndRect, &monitorInfo.Monitor) {
+		fmt.Println("false")
 		return false
 	}
 
-	style, err := win.GetWindowLong(hwnd, win.GWL_STYLE)
-	if err != nil {
-		return false
-	}
+	fmt.Println(wndRect)
 
-	exStyle, err := win.GetWindowLong(hwnd, win.GWL_EXSTYLE)
-	if err != nil {
-		return false
-	}
+	style := win.GetWindowLongPtr(hwnd, win.GWL_STYLE)
+	exStyle := win.GetWindowLongPtr(hwnd, win.GWL_EXSTYLE)
 
 	// I doubt that this check is necessary
 	return !((style&(win.WS_DLGFRAME|win.WS_THICKFRAME)) != 0 ||
