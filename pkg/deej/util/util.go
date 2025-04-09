@@ -76,38 +76,39 @@ func SetAutostartState(state bool) error {
 // NormalizeScalar "trims" the given float32 to 2 points of precision (e.g. 0.15442 -> 0.15)
 // This is used both for windows core audio volume levels and for cleaning up slider level values from serial
 func NormalizeScalar(v float32) float32 {
-	return float32(math.Floor(float64(v)*100) / 100.0)
+	return float32(math.Round(float64(v)*100) / 100.0)
 }
 
 // SignificantlyDifferent returns true if there's a significant enough volume difference between two given values
-func SignificantlyDifferent(old float32, new float32, noiseReductionLevel string) bool {
-
+func SignificantlyDifferent(oldValue int, newValue int, noiseReductionLevel string) bool {
 	const (
 		noiseReductionHigh = "high"
 		noiseReductionLow  = "low"
+		noiseReductionNone = "none"
 	)
 
 	// this threshold is solely responsible for dealing with hardware interference when
-	// sliders are producing noisy values. this value should be a median value between two
-	// round percent values. for instance, 0.025 means volume can move at 3% increments
-	var significantDifferenceThreshold float64
+	// sliders are producing noisy values.
+	var significantDifferenceThreshold int
 
 	// choose our noise reduction level based on the config-provided value
 	switch noiseReductionLevel {
 	case noiseReductionHigh:
-		significantDifferenceThreshold = 0.035
+		significantDifferenceThreshold = 20
 	case noiseReductionLow:
-		significantDifferenceThreshold = 0.015
+		significantDifferenceThreshold = 5
+	case noiseReductionNone:
+		significantDifferenceThreshold = 1
 	default:
-		significantDifferenceThreshold = 0.025
+		significantDifferenceThreshold = 10
 	}
 
-	if math.Abs(float64(old-new)) >= significantDifferenceThreshold {
-		return true
+	// lower the threshold for edges to snap to 1.0 and 0.0
+	if (newValue < 10 || newValue > 1013) && significantDifferenceThreshold > 5 {
+		significantDifferenceThreshold = 5
 	}
 
-	// special behavior is needed around the edges of 0.0 and 1.0 - this makes it snap (just a tiny bit) to them
-	if (almostEquals(new, 1.0) && old != 1.0) || (almostEquals(new, 0.0) && old != 0.0) {
+	if AbsInt(oldValue-newValue) >= significantDifferenceThreshold {
 		return true
 	}
 
@@ -115,7 +116,9 @@ func SignificantlyDifferent(old float32, new float32, noiseReductionLevel string
 	return false
 }
 
-// a helper to make sure volume snaps correctly to 0 and 100, where appropriate
-func almostEquals(a float32, b float32) bool {
-	return math.Abs(float64(a-b)) < 0.000001
+func AbsInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

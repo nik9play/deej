@@ -39,8 +39,8 @@ type SerialIO struct {
 	port        serial.Port
 	mode        serial.Mode
 
-	lastKnownNumSliders        int
-	currentSliderPercentValues []float32
+	lastKnownNumSliders int
+	currentSliderValues []int
 
 	sliderMoveConsumers  []chan SliderMoveEvent
 	stateChangeConsumers []chan bool
@@ -152,7 +152,10 @@ func (sio *SerialIO) connect() error {
 		return fmt.Errorf("open serial connection: %w", err)
 	}
 
-	err = port.SetReadTimeout(time.Duration(3) * time.Second)
+	// actually, this sets timeout to 0x7FFFFFFE instead of 0xFFFFFFFE
+	// to make serial chip work properly.
+	// see https://github.com/arduino/serial-monitor/issues/112
+	err = port.SetReadTimeout(serial.NoTimeout)
 	if err != nil {
 		sio.logger.Warnw("Failed to set read timeout", "error", err)
 		return fmt.Errorf("set read timeout: %w", err)
@@ -171,7 +174,7 @@ func (sio *SerialIO) GetState() bool {
 func (sio *SerialIO) Start() {
 	sio.stopChannel = make(chan struct{})
 	sio.logger.Info("Serial starting")
-	sio.wg.Add(1)
+
 	go sio.managerLoop()
 }
 
@@ -181,8 +184,7 @@ func (sio *SerialIO) Stop() {
 
 	// Wait for all goroutines to finish
 	sio.wg.Wait()
-	// Close the port after all loops have stopped
-	_ = sio.closePort()
+
 	sio.logger.Info("Serial stopped")
 }
 
@@ -243,6 +245,7 @@ func (sio *SerialIO) setupOnConfigReload() {
 
 // manages serial connection and retries
 func (sio *SerialIO) managerLoop() {
+	sio.wg.Add(1)
 	defer sio.wg.Done()
 
 	for {
@@ -282,7 +285,6 @@ func (sio *SerialIO) managerLoop() {
 		})
 		sio.deej.notifier.Notify(connectedTitle, connectedDescription)
 
-		sio.wg.Add(1)
 		go sio.readLoop(namedLogger)
 
 		select {
@@ -311,23 +313,18 @@ func (sio *SerialIO) managerLoop() {
 
 		case <-sio.stopChannel:
 			sio.logger.Debug("managerLoop: stop signal")
+			_ = sio.closePort()
 			return
 		}
 	}
 }
 
 func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
+	sio.wg.Add(1)
 	defer sio.wg.Done()
 
 	reader := bufio.NewReader(sio.port)
 	for {
-		select {
-		case <-sio.stopChannel:
-			logger.Debug("readLoop: stop signal")
-			return
-		default:
-		}
-
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			sio.errChannel <- fmt.Errorf("read error: %w", err)
@@ -344,7 +341,7 @@ func (sio *SerialIO) readLoop(logger *zap.SugaredLogger) {
 
 func (sio *SerialIO) closePort() error {
 	if sio.port == nil {
-		return nil
+		return fmt.Errorf("port is already closed")
 	}
 
 	if err := sio.port.Close(); err != nil {
@@ -377,11 +374,11 @@ func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
 	if numSliders != sio.lastKnownNumSliders {
 		logger.Infow("Detected sliders", "amount", numSliders)
 		sio.lastKnownNumSliders = numSliders
-		sio.currentSliderPercentValues = make([]float32, numSliders)
+		sio.currentSliderValues = make([]int, numSliders)
 
 		// reset everything to be an impossible value to force the slider move event later
-		for idx := range sio.currentSliderPercentValues {
-			sio.currentSliderPercentValues[idx] = -1.0
+		for idx := range sio.currentSliderValues {
+			sio.currentSliderValues[idx] = -1023
 		}
 	}
 
@@ -411,10 +408,10 @@ func (sio *SerialIO) handleLine(logger *zap.SugaredLogger, line string) {
 		}
 
 		// check if it changes the desired state (could just be a jumpy raw slider value)
-		if util.SignificantlyDifferent(sio.currentSliderPercentValues[sliderIdx], normalizedScalar, sio.deej.config.NoiseReductionLevel) {
+		if util.SignificantlyDifferent(sio.currentSliderValues[sliderIdx], number, sio.deej.config.NoiseReductionLevel) {
 
 			// if it does, update the saved value and create a move event
-			sio.currentSliderPercentValues[sliderIdx] = normalizedScalar
+			sio.currentSliderValues[sliderIdx] = number
 
 			moveEvents = append(moveEvents, SliderMoveEvent{
 				SliderID:     sliderIdx,

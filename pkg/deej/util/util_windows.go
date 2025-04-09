@@ -150,7 +150,6 @@ func isWindowFullscreen(hwnd windows.HWND) bool {
 
 	// the window should be at least as large as the monitor
 	if !win.IntersectRect(&wndRect, &wndRect, &monitorInfo.Monitor) || !win.EqualRect(&wndRect, &monitorInfo.Monitor) {
-		fmt.Println("false")
 		return false
 	}
 
