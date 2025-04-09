@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/nik9play/deej/pkg/deej/util"
+	"github.com/nik9play/deej/pkg/notify"
 )
 
 // CanonicalConfig provides application-wide access to configuration fields,
@@ -32,7 +33,7 @@ type CanonicalConfig struct {
 	Language string
 
 	logger             *zap.SugaredLogger
-	notifier           Notifier
+	notifier           notify.Notifier
 	stopWatcherChannel chan bool
 
 	reloadConsumers []chan bool
@@ -70,7 +71,7 @@ var defaultSliderMapping = func() *sliderMap {
 }()
 
 // NewConfig creates a config instance for the deej object and sets up viper instances for deej's config files
-func NewConfig(logger *zap.SugaredLogger, notifier Notifier, configPath string) (*CanonicalConfig, error) {
+func NewConfig(logger *zap.SugaredLogger, notifier notify.Notifier, configPath string) (*CanonicalConfig, error) {
 	logger = logger.Named("config")
 
 	ex, err := os.Executable()

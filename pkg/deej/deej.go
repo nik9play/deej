@@ -14,6 +14,8 @@ import (
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/nik9play/deej/pkg/deej/util"
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/nik9play/deej/pkg/notify"
 )
 
 const (
@@ -25,7 +27,7 @@ const (
 // Deej is the main entity managing access to all sub-components
 type Deej struct {
 	logger    *zap.SugaredLogger
-	notifier  Notifier
+	notifier  notify.Notifier
 	config    *CanonicalConfig
 	serial    *SerialIO
 	sessions  *sessionMap
@@ -53,7 +55,7 @@ func NewDeej(logger *zap.SugaredLogger, verbose bool, configPath string) (*Deej,
 		return nil, fmt.Errorf("load message file: %w", err)
 	}
 
-	notifier, err := NewToastNotifier(logger)
+	notifier, err := notify.NewToastNotifier(logger)
 	if err != nil {
 		logger.Errorw("Failed to create ToastNotifier", "error", err)
 		return nil, fmt.Errorf("create new ToastNotifier: %w", err)
