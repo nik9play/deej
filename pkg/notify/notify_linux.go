@@ -22,8 +22,8 @@ func pathAbs(path string) string {
 	return abs
 }
 
-func Notify(title, message, appIcon string) error {
-	appIcon = pathAbs(appIcon)
+func Notify(title, message, appIconPath, appName string) error {
+	appIconPath = pathAbs(appIconPath)
 
 	cmd := func() error {
 		send, err := exec.LookPath("sw-notify-send")
@@ -34,7 +34,7 @@ func Notify(title, message, appIcon string) error {
 			}
 		}
 
-		c := exec.Command(send, title, message, "-i", appIcon)
+		c := exec.Command(send, title, message, "-i", appIconPath, "-a", appName)
 		return c.Run()
 	}
 
@@ -43,7 +43,7 @@ func Notify(title, message, appIcon string) error {
 		if err != nil {
 			return err
 		}
-		c := exec.Command(send, "--title", title, "--passivepopup", message, "10", "--icon", appIcon)
+		c := exec.Command(send, "--title", title, "--passivepopup", message, "10", "--icon", appIconPath)
 		return c.Run()
 	}
 
@@ -53,7 +53,7 @@ func Notify(title, message, appIcon string) error {
 	}
 	obj := conn.Object("org.freedesktop.Notifications", dbus.ObjectPath("/org/freedesktop/Notifications"))
 
-	call := obj.Call("org.freedesktop.Notifications.Notify", 0, "", uint32(0), appIcon, title, message, []string{}, map[string]dbus.Variant{}, int32(-1))
+	call := obj.Call("org.freedesktop.Notifications.Notify", 0, appName, uint32(0), appIconPath, title, message, []string{}, map[string]dbus.Variant{}, int32(-1))
 	if call.Err != nil {
 		e := cmd()
 		if e != nil {

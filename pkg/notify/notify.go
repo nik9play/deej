@@ -26,7 +26,7 @@ func NewToastNotifier(logger *zap.SugaredLogger) (*ToastNotifier, error) {
 }
 
 func (tn *ToastNotifier) Notify(title string, message string) {
-	err := Notify(title, message, tn.appIconPath)
+	err := Notify(title, message, tn.appIconPath, "deej")
 
 	if err != nil {
 		tn.logger.Errorw("Failed to send toast notification", "error", err)

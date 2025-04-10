@@ -4,9 +4,9 @@ import (
 	"github.com/go-toast/toast"
 )
 
-func Notify(title, message, appIconPath string) error {
+func Notify(title, message, appIconPath, appName string) error {
 	notification := toast.Notification{
-		AppID:   "deej",
+		AppID:   appName,
 		Title:   title,
 		Message: message,
 		Icon:    appIconPath,
