@@ -96,7 +96,7 @@ func (sio *SerialIO) connect() error {
 	sio.comPortToUse = sio.comPortConfig
 
 	if sio.comPortConfig == "auto" {
-		sio.logger.Infow("Trying to autodetect serial port")
+		sio.logger.Debugw("Trying to autodetect serial port")
 
 		ports, err := enumerator.GetDetailedPortsList()
 
@@ -105,7 +105,7 @@ func (sio *SerialIO) connect() error {
 			return ErrNoSerialPorts
 		}
 		if len(ports) == 0 {
-			sio.logger.Warn("No serial ports found, retrying")
+			sio.logger.Debug("No serial ports found, retrying")
 			return ErrNoSerialPorts
 		}
 		for _, port := range ports {
@@ -119,7 +119,7 @@ func (sio *SerialIO) connect() error {
 				// Find Arduino Nano (CH340)
 				for _, vidpid := range allowedVIDPIDs {
 					if vid == vidpid.VID && pid == vidpid.PID {
-						sio.logger.Infow("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
+						sio.logger.Debugw("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
 
 						sio.comPortToUse = port.Name
 						break
@@ -129,7 +129,7 @@ func (sio *SerialIO) connect() error {
 		}
 
 		if sio.comPortToUse == "auto" {
-			sio.logger.Warn("COM port not found, retrying")
+			sio.logger.Debug("COM port not found, retrying")
 			return ErrAutoPortNotFound
 		}
 	}
@@ -148,7 +148,7 @@ func (sio *SerialIO) connect() error {
 
 	if err != nil {
 		// might need a user notification here, TBD
-		sio.logger.Warnw("Failed to open serial connection", "error", err)
+		sio.logger.Debugw("Failed to open serial connection", "error", err)
 		return fmt.Errorf("open serial connection: %w", err)
 	}
 
@@ -248,11 +248,12 @@ func (sio *SerialIO) managerLoop() {
 	sio.wg.Add(1)
 	defer sio.wg.Done()
 
+	sio.logger.Infof("Trying serial connection")
+
 	for {
-		sio.logger.Infof("Trying serial connection")
 		err := sio.connect()
 		if err != nil {
-			sio.logger.Warnw("Serial connection error. Trying again...", "err", err)
+			sio.logger.Debugw("Serial connection error. Trying again...", "err", err)
 
 			select {
 			case <-sio.stopChannel:
@@ -266,7 +267,7 @@ func (sio *SerialIO) managerLoop() {
 		sio.sendStateChangeEvent(true)
 
 		namedLogger := sio.logger.Named(strings.ToLower(sio.comPortToUse))
-		namedLogger.Infow("Connected", "port", sio.port)
+		namedLogger.Infow("Connected")
 
 		connectedTitle := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
 			DefaultMessage: &i18n.Message{
@@ -349,7 +350,7 @@ func (sio *SerialIO) closePort() error {
 		return fmt.Errorf("close serial connection: %w", err)
 	}
 
-	sio.logger.Debug("Serial connection closed")
+	sio.logger.Warn("Serial connection closed")
 	sio.port = nil
 	sio.sendStateChangeEvent(false)
 	return nil
