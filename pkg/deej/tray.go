@@ -8,6 +8,7 @@ import (
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/nik9play/deej/pkg/deej/util"
+	"github.com/nik9play/deej/pkg/icon"
 )
 
 func getConfigItemText(d *Deej) (string, string) {
@@ -134,7 +135,7 @@ func (d *Deej) initializeTray(onDone func()) {
 	onReady := func() {
 		logger.Debug("Tray instance ready")
 
-		systray.SetTemplateIcon(DeejLogo, DeejLogo)
+		systray.SetTemplateIcon(icon.DeejLogo, icon.DeejLogo)
 
 		systray.SetTitle("deej")
 
@@ -149,7 +150,7 @@ func (d *Deej) initializeTray(onDone func()) {
 
 		settingsTitle, settingsDescription := getSettingsItemText(d)
 		settings := systray.AddMenuItem(settingsTitle, settingsDescription)
-		settings.SetIcon(EditConfigIcon)
+		settings.SetIcon(icon.EditConfigIcon)
 
 		configTitle, configDescription := getConfigItemText(d)
 		editConfig := settings.AddSubMenuItem(configTitle, configDescription)
@@ -163,7 +164,7 @@ func (d *Deej) initializeTray(onDone func()) {
 
 		rescanTitle, rescanDescription := getRescanItemText(d)
 		refreshSessions := systray.AddMenuItem(rescanTitle, rescanDescription)
-		refreshSessions.SetIcon(RefreshSessionsIcon)
+		refreshSessions.SetIcon(icon.RefreshSessionsIcon)
 
 		systray.AddSeparator()
 

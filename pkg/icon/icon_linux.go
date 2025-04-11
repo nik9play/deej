@@ -1,4 +1,4 @@
-package deej
+package icon
 
 import _ "embed"
 

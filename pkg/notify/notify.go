@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nik9play/deej/pkg/deej/util"
+	"github.com/nik9play/deej/pkg/icon"
 	"go.uber.org/zap"
 )
 
@@ -12,13 +14,12 @@ type Notifier interface {
 }
 
 type ToastNotifier struct {
-	logger      *zap.SugaredLogger
-	appIconPath string
+	logger *zap.SugaredLogger
 }
 
 func NewToastNotifier(logger *zap.SugaredLogger) (*ToastNotifier, error) {
 	logger = logger.Named("notifier")
-	tn := &ToastNotifier{logger: logger, appIconPath: filepath.Join(os.TempDir(), "deej.ico")}
+	tn := &ToastNotifier{logger: logger}
 
 	logger.Debug("Created toast notifier instance")
 
@@ -26,9 +27,38 @@ func NewToastNotifier(logger *zap.SugaredLogger) (*ToastNotifier, error) {
 }
 
 func (tn *ToastNotifier) Notify(title string, message string) {
-	err := Notify(title, message, tn.appIconPath, "deej")
+	appIconPath := tn.createIconFile()
+	err := Notify(title, message, appIconPath, "deej")
 
 	if err != nil {
 		tn.logger.Errorw("Failed to send toast notification", "error", err)
 	}
+}
+
+func (tn *ToastNotifier) createIconFile() (appIconPath string) {
+	fileName := "deej.ico"
+	if util.Linux() {
+		fileName = "deej.png"
+	}
+
+	appIconPath = filepath.Join(os.TempDir(), fileName)
+
+	if !util.FileExists(appIconPath) {
+		tn.logger.Debugw("Deej icon file missing, creating", "path", appIconPath)
+
+		f, err := os.Create(appIconPath)
+		if err != nil {
+			tn.logger.Errorw("Failed to create toast notification icon", "error", err)
+		}
+
+		if _, err = f.Write(icon.DeejLogo); err != nil {
+			tn.logger.Errorw("Failed to write toast notification icon", "error", err)
+		}
+
+		if err = f.Close(); err != nil {
+			tn.logger.Errorw("Failed to close toast notification icon", "error", err)
+		}
+	}
+
+	return
 }
