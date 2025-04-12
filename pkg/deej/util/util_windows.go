@@ -153,8 +153,6 @@ func isWindowFullscreen(hwnd windows.HWND) bool {
 		return false
 	}
 
-	fmt.Println(wndRect)
-
 	style := win.GetWindowLongPtr(hwnd, win.GWL_STYLE)
 	exStyle := win.GetWindowLongPtr(hwnd, win.GWL_EXSTYLE)
 
