@@ -3,7 +3,9 @@ package deej
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -26,6 +28,8 @@ type wcaSessionFinder struct {
 	// our master input and output sessions
 	masterOut *masterSession
 	masterIn  *masterSession
+
+	lock sync.Mutex
 }
 
 const (
@@ -54,10 +58,18 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 }
 
 func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
+	sf.lock.Lock()
+	defer sf.lock.Unlock()
+	// seems like all com operations must happen on the same initialized thread
+	// it works fine without the lock, but i leave it here for the time being
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	sessions := []Session{}
 
 	// we must call this every time we're about to list devices, i think. could be wrong
-	if err := ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED); err != nil {
+	// seems like the COINIT_MULTITHREADED works more stable than the COINIT_APARTMENTTHREADED
+	if err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED); err != nil {
 
 		// if the error is "Incorrect function" that corresponds to 0x00000001,
 		// which represents E_FALSE in COM error handling. this is fine for this function,
