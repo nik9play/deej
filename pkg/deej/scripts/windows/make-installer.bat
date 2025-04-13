@@ -11,4 +11,4 @@ ECHO - gitCommit %GIT_COMMIT%
 ECHO - versionTag %VERSION_TAG%
 
 ISCC /O"%DEEJ_ROOT%\build" "/DAppVersion=%VERSION_TAG%" /Qp "%DEEJ_ROOT%\pkg\deej\scripts\windows\installer.iss"
-ECHO Successfully built installer
+ECHO Installer successfully built
