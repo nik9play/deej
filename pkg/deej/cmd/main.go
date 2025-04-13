@@ -1,3 +1,5 @@
+//go:generate rsrc -manifest ../assets/deej.manifest  -ico ../assets/logo.ico -o ../cmd/rsrc_windows.syso
+
 package main
 
 import (
