@@ -291,6 +291,8 @@ func (sio *SerialIO) managerLoop() {
 		select {
 		case err := <-sio.errChannel:
 			sio.logger.Warnw("Read line error", "err", err)
+			sio.logger.Warn("Closing serial port")
+
 			disconnectedTitle := sio.deej.localizer.MustLocalize(&i18n.LocalizeConfig{
 				DefaultMessage: &i18n.Message{
 					ID:    "ComPortDisconnectedNotificationTitle",
@@ -350,7 +352,7 @@ func (sio *SerialIO) closePort() error {
 		return fmt.Errorf("close serial connection: %w", err)
 	}
 
-	sio.logger.Warn("Serial connection closed")
+	sio.logger.Info("Serial connection closed")
 	sio.port = nil
 	sio.sendStateChangeEvent(false)
 	return nil

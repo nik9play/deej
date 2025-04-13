@@ -120,7 +120,7 @@ func (m *sessionMap) getAndAddSessions() error {
 		}
 	}
 
-	m.logger.Infow("Got all audio sessions successfully", "sessionMap", m)
+	m.logger.Debugw("Got all audio sessions successfully", "sessionMap", m)
 
 	return nil
 }
