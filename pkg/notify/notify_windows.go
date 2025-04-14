@@ -41,7 +41,6 @@ func initalize(appIconPath, appName string) error {
 		GUID:        appGUID,
 		IconPath:    appIconPath,
 	})
-
 	if err != nil {
 		return err
 	}
@@ -60,7 +59,6 @@ func Notify(title, message, appIconPath, appName string) error {
 		AppID:    appID,
 		Title:    title,
 		Body:     message,
-		Icon:     appIconPath,
 		Duration: "short",
 	}
 
