@@ -31,12 +31,12 @@ jobs:
 
       - name: Build deej (Windows)
         if: runner.os == 'Windows'
-        run: pkg/deej/scripts/windows/build-${{ matrix.mode }}.bat
+        run: scripts/windows/build-${{ matrix.mode }}.bat
         shell: cmd
 
       - name: Build deej (Linux)
         if: runner.os == 'Linux'
-        run: pkg/deej/scripts/linux/build-${{ matrix.mode }}.sh
+        run: scripts/linux/build-${{ matrix.mode }}.sh
 
       - name: Upload build
         uses: actions/upload-artifact@v4

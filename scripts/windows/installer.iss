@@ -18,7 +18,7 @@ SolidCompression=yes
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#AppExeName}
-SetupIconFile="..\..\..\..\pkg\deej\assets\logo.ico"
+SetupIconFile="..\..\pkg\icon\assets\logo.ico"
 ; "ArchitecturesAllowed=x64compatible" specifies that Setup cannot run
 ; on anything but x64 and Windows 11 on Arm.
 ArchitecturesAllowed=x64compatible
@@ -30,7 +30,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 WizardStyle=modern
 WizardSizePercent=100
-WizardSmallImageFile="..\..\..\..\pkg\deej\assets\logo.bmp"
+WizardSmallImageFile="..\..\pkg\icon\assets\logo.bmp"
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -44,8 +44,8 @@ russian.EditConfig=Редактировать конфигурацию
 Name: "autostart"; Description: "{cm:AutoStartProgram,{#AppName}}"
 
 [Files]
-Source: "../../../../build/deej-release.exe"; DestDir: "{app}"; DestName: {#AppExeName}; Flags: ignoreversion
-Source: "../../../../config_examples/config.example.yaml"; DestDir: "{app}"; DestName: "config.yaml"; Flags: ignoreversion onlyifdoesntexist
+Source: "../../build/deej-release.exe"; DestDir: "{app}"; DestName: {#AppExeName}; Flags: ignoreversion
+Source: "../../config_examples/config.example.yaml"; DestDir: "{app}"; DestName: "config.yaml"; Flags: ignoreversion onlyifdoesntexist
 
 [Registry]
 ; autostart

@@ -18,7 +18,7 @@ IF NOT "%MODE%"=="dev" IF NOT "%MODE%"=="release" (
 ECHO Building deej (%MODE%)...
 
 REM set repo root in relation to script path to avoid cwd dependency
-SET "DEEJ_ROOT=%~dp0..\..\..\.."
+SET "DEEJ_ROOT=%~dp0..\.."
 
 REM get git commit and version tag
 FOR /f "delims=" %%a IN ('git rev-list -1 --abbrev-commit HEAD') DO @SET GIT_COMMIT=%%a
