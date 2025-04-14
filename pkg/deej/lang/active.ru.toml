@@ -12,7 +12,7 @@ other = "Успешное подключение к deej."
 
 [ComPortConnectedNotificationTitle]
 hash = "sha1-99e27f1ea178ae2b318c756f266c191b6b651097"
-other = "Подключен к {{.ComPort}}."
+other = "Подключен к {{.ComPort}}"
 
 [ComPortDisconnectedNotificationDescription]
 hash = "sha1-1e660da3f0a1e6d9e41c36faa5a9c2bf3f1fb75a"
@@ -20,7 +20,7 @@ other = "Попытка переподключения."
 
 [ComPortDisconnectedNotificationTitle]
 hash = "sha1-dbe022b756cc1a7542fca7db4384bdf3ac331d61"
-other = "Отключен от {{.ComPort}} из-за ошибки."
+other = "Отключен от {{.ComPort}} из-за ошибки"
 
 [ConfigErrorDescription]
 hash = "sha1-2d755cadbc18c52232808cdaf99d584c96d053a3"
