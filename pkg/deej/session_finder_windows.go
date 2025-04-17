@@ -3,9 +3,11 @@ package deej
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -55,6 +57,24 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 	sf.logger.Debug("Created WCA session finder instance")
 
 	return sf, nil
+}
+
+// I noticed that deej crashes with E_INVALIDARG when trying to run it in VM over RDP
+// It turned out that the problem was an incorrectly passed ctx argument in the go-wca library
+func mmdActivateWorkaround(mmd *wca.IMMDevice, refIID *ole.GUID, ctx uint32, prop, obj interface{}) (err error) {
+	objValue := reflect.ValueOf(obj).Elem()
+	hr, _, _ := syscall.SyscallN(
+		mmd.VTable().Activate,
+		uintptr(unsafe.Pointer(mmd)),
+		uintptr(unsafe.Pointer(refIID)),
+		// uintptr(unsafe.Pointer(&ctx)),
+		uintptr(ctx), // there is a fix
+		0,
+		objValue.Addr().Pointer())
+	if hr != 0 {
+		err = ole.NewError(hr)
+	}
+	return
 }
 
 func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
@@ -228,7 +248,7 @@ func (sf *wcaSessionFinder) getMasterSession(mmDevice *wca.IMMDevice, key string
 
 	var audioEndpointVolume *wca.IAudioEndpointVolume
 
-	if err := mmDevice.Activate(wca.IID_IAudioEndpointVolume, wca.CLSCTX_ALL, nil, &audioEndpointVolume); err != nil {
+	if err := mmdActivateWorkaround(mmDevice, wca.IID_IAudioEndpointVolume, wca.CLSCTX_ALL, nil, &audioEndpointVolume); err != nil {
 		sf.logger.Warnw("Failed to activate AudioEndpointVolume for master session", "error", err)
 		return nil, fmt.Errorf("activate master session: %w", err)
 	}
@@ -386,7 +406,8 @@ func (sf *wcaSessionFinder) enumerateAndAddProcessSessions(
 	// query the given IMMDevice's IAudioSessionManager2 interface
 	var audioSessionManager2 *wca.IAudioSessionManager2
 
-	if err := endpoint.Activate(
+	if err := mmdActivateWorkaround(
+		endpoint,
 		wca.IID_IAudioSessionManager2,
 		wca.CLSCTX_ALL,
 		nil,
