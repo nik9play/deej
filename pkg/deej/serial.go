@@ -19,11 +19,6 @@ import (
 	"github.com/nik9play/deej/pkg/deej/util"
 )
 
-type VIDPID struct {
-	VID uint64
-	PID uint64
-}
-
 // SerialIO provides a deej-aware abstraction layer to managing serial I/O
 type SerialIO struct {
 	comPortConfig  string
@@ -49,7 +44,7 @@ type SerialIO struct {
 var ErrNoSerialPorts = errors.New("no serial ports found")
 var ErrAutoPortNotFound = errors.New("can't autodetect com port")
 
-var allowedVIDPIDs = []VIDPID{{0x1A86, 0x7523}}
+// var allowedVIDPIDs = []VIDPID{{0x1A86, 0x7523}}
 
 // SliderMoveEvent represents a single slider move captured by deej
 type SliderMoveEvent struct {
@@ -95,6 +90,8 @@ func (sio *SerialIO) connect() error {
 
 	sio.comPortToUse = sio.comPortConfig
 
+	allowedVIDPID := sio.deej.config.AutoSearchVIDPID
+
 	if sio.comPortConfig == "auto" {
 		sio.logger.Debugw("Trying to autodetect serial port")
 
@@ -116,15 +113,13 @@ func (sio *SerialIO) connect() error {
 				vid, _ := strconv.ParseUint(port.VID, 16, 16)
 				pid, _ := strconv.ParseUint(port.PID, 16, 16)
 
-				// Find Arduino Nano (CH340)
-				for _, vidpid := range allowedVIDPIDs {
-					if vid == vidpid.VID && pid == vidpid.PID {
-						sio.logger.Debugw("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
+				if vid == allowedVIDPID.VID && pid == allowedVIDPID.PID {
+					sio.logger.Debugw("Found COM port", "com", port.Name, "vid", port.VID, "pid", port.PID)
 
-						sio.comPortToUse = port.Name
-						break
-					}
+					sio.comPortToUse = port.Name
+					break
 				}
+
 			}
 		}
 
@@ -248,7 +243,11 @@ func (sio *SerialIO) managerLoop() {
 	sio.wg.Add(1)
 	defer sio.wg.Done()
 
-	sio.logger.Infof("Trying serial connection")
+	sio.logger.Infow("Trying serial connection",
+		"port", sio.deej.config.ConnectionInfo.COMPort,
+		"vid", fmt.Sprintf("%X", sio.deej.config.AutoSearchVIDPID.VID),
+		"pid", fmt.Sprintf("%X", sio.deej.config.AutoSearchVIDPID.PID),
+	)
 
 	for {
 		err := sio.connect()

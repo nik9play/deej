@@ -16,6 +16,11 @@ import (
 	"github.com/nik9play/deej/pkg/notify"
 )
 
+type VIDPID struct {
+	VID uint64
+	PID uint64
+}
+
 // CanonicalConfig provides application-wide access to configuration fields,
 // as well as loading/file watching logic for deej's configuration file
 type CanonicalConfig struct {
@@ -31,6 +36,8 @@ type CanonicalConfig struct {
 	NoiseReductionLevel string
 
 	Language string
+
+	AutoSearchVIDPID VIDPID
 
 	logger             *zap.SugaredLogger
 	notifier           notify.Notifier
@@ -55,10 +62,16 @@ const (
 	configKeyBaudRate            = "baud_rate"
 	configKeyNoiseReductionLevel = "noise_reduction"
 	configKeyLanguage            = "language"
+	configKeyComVID              = "com_vid"
+	configKeyComPID              = "com_pid"
 
 	defaultCOMPort  = "COM4"
 	defaultBaudRate = 9600
 	defaultLanguage = "auto"
+
+	// ch340 chip
+	defaultVID uint64 = 0x1A86
+	defaultPID uint64 = 0x7523
 )
 
 // has to be defined as a non-constant because we're using path.Join
@@ -107,6 +120,8 @@ func NewConfig(logger *zap.SugaredLogger, notifier notify.Notifier, configPath s
 	userConfig.SetDefault(configKeyCOMPort, defaultCOMPort)
 	userConfig.SetDefault(configKeyBaudRate, defaultBaudRate)
 	userConfig.SetDefault(configKeyLanguage, defaultLanguage)
+	userConfig.SetDefault(configKeyComVID, defaultVID)
+	userConfig.SetDefault(configKeyComPID, defaultPID)
 
 	internalConfig := viper.New()
 	internalConfig.SetConfigName(internalConfigName)
@@ -312,7 +327,13 @@ func (cc *CanonicalConfig) populateFromVipers() error {
 	cc.NoiseReductionLevel = cc.userConfig.GetString(configKeyNoiseReductionLevel)
 	cc.Language = cc.userConfig.GetString(configKeyLanguage)
 
-	cc.logger.Debug("Populated config fields from vipers")
+	userConfigVID := cc.userConfig.GetUint64(configKeyComVID)
+	userConfigPID := cc.userConfig.GetUint64(configKeyComPID)
+
+	cc.AutoSearchVIDPID = VIDPID{VID: userConfigVID, PID: userConfigPID}
+
+	cc.logger.Debugw("AutoSearchVIDPID", "val", cc.AutoSearchVIDPID)
+	cc.logger.Debugw("Populated config fields from vipers")
 
 	return nil
 }
