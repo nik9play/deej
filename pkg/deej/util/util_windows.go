@@ -153,12 +153,14 @@ func isWindowFullscreen(hwnd windows.HWND) bool {
 		return false
 	}
 
-	style := win.GetWindowLongPtr(hwnd, win.GWL_STYLE)
-	exStyle := win.GetWindowLongPtr(hwnd, win.GWL_EXSTYLE)
+	// style := win.GetWindowLongPtr(hwnd, win.GWL_STYLE)
+	// exStyle := win.GetWindowLongPtr(hwnd, win.GWL_EXSTYLE)
 
-	// I doubt that this check is necessary
-	return !((style&(win.WS_DLGFRAME|win.WS_THICKFRAME)) != 0 ||
-		(exStyle&(win.WS_EX_WINDOWEDGE|win.WS_EX_TOOLWINDOW)) != 0)
+	// // I doubt that this check is necessary
+	// return !((style&(win.WS_DLGFRAME|win.WS_THICKFRAME)) != 0 ||
+	// 	(exStyle&(win.WS_EX_WINDOWEDGE|win.WS_EX_TOOLWINDOW)) != 0)
+
+	return true
 }
 
 const registryValue = "deej"
