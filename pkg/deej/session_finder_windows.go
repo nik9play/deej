@@ -1,6 +1,7 @@
 package deej
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -15,6 +16,11 @@ import (
 	wca "github.com/moutend/go-wca/pkg/wca"
 	"go.uber.org/zap"
 )
+
+type SessionResult struct {
+	Sessions []Session
+	Err      error
+}
 
 type wcaSessionFinder struct {
 	logger        *zap.SugaredLogger
@@ -32,6 +38,12 @@ type wcaSessionFinder struct {
 	masterIn  *masterSession
 
 	lock sync.Mutex
+
+	reqChannel chan struct{}
+	resChannel chan SessionResult
+
+	workerCtx    context.Context
+	workerCancel context.CancelFunc
 }
 
 const (
@@ -48,13 +60,21 @@ const (
 )
 
 func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	sf := &wcaSessionFinder{
 		logger:        logger.Named("session_finder"),
 		sessionLogger: logger.Named("sessions"),
 		eventCtx:      ole.NewGUID(myteriousGUID),
+		reqChannel:    make(chan struct{}),
+		resChannel:    make(chan SessionResult),
+		workerCtx:     ctx,
+		workerCancel:  cancel,
 	}
 
 	sf.logger.Debug("Created WCA session finder instance")
+
+	go sf.sessionFinderWorker(ctx)
 
 	return sf, nil
 }
@@ -77,48 +97,79 @@ func mmdActivateWorkaround(mmd *wca.IMMDevice, refIID *ole.GUID, ctx uint32, pro
 	return
 }
 
-func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
-	sf.lock.Lock()
-	defer sf.lock.Unlock()
-	// seems like all com operations must happen on the same initialized thread
+func (sf *wcaSessionFinder) initializeCOMLoop(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			sf.logger.Info("COM initializing stopping")
+			return errors.New("com initializing stopped")
+		default:
+			err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED)
+
+			if err == nil {
+				return nil
+			}
+
+			// if the error is "Incorrect function" that corresponds to 0x00000001,
+			// which represents E_FALSE in COM error handling. this is fine for this function,
+			// and just means that the call was redundant.
+			const eFalse = 1
+			oleError := &ole.OleError{}
+
+			if errors.As(err, &oleError) {
+				if oleError.Code() == eFalse {
+					return nil
+				} else {
+					sf.logger.Warnw("Failed to call CoInitializeEx. Retrying...",
+						"isOleError", true,
+						"error", err,
+						"oleError", oleError)
+
+					time.Sleep(2 * time.Second)
+				}
+			} else {
+				sf.logger.Warnw("Failed to call CoInitializeEx. Retrying...",
+					"isOleError", false,
+					"error", err,
+					"oleError", nil)
+
+				time.Sleep(2 * time.Second)
+			}
+		}
+	}
+}
+
+// maybe initalizing COM is needed only once, so we do it in a dedicated goroutine
+// that will also handle all session finding requests
+// this way we avoid initializing and uninitializing COM multiple times
+func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
+	// seems like all COM operations must happen on the same initialized thread
 	// it works fine without the lock, but i leave it here for the time being
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	sessions := []Session{}
-
-	// we must call this every time we're about to list devices, i think. could be wrong
-	// seems like the COINIT_MULTITHREADED works more stable than the COINIT_APARTMENTTHREADED
-	if err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED); err != nil {
-
-		// if the error is "Incorrect function" that corresponds to 0x00000001,
-		// which represents E_FALSE in COM error handling. this is fine for this function,
-		// and just means that the call was redundant.
-		const eFalse = 1
-		oleError := &ole.OleError{}
-
-		if errors.As(err, &oleError) {
-			if oleError.Code() == eFalse {
-				sf.logger.Warn("CoInitializeEx failed with E_FALSE due to redundant invocation")
-			} else {
-				sf.logger.Warnw("Failed to call CoInitializeEx",
-					"isOleError", true,
-					"error", err,
-					"oleError", oleError)
-
-				return nil, fmt.Errorf("call CoInitializeEx: %w", err)
-			}
-		} else {
-			sf.logger.Warnw("Failed to call CoInitializeEx",
-				"isOleError", false,
-				"error", err,
-				"oleError", nil)
-
-			return nil, fmt.Errorf("call CoInitializeEx: %w", err)
-		}
-
+	if err := sf.initializeCOMLoop(ctx); err != nil {
+		return
 	}
+	sf.logger.Info("COM initialized for session finder")
 	defer ole.CoUninitialize()
+
+	sf.logger.Debug("Starting COM message loop for session finder")
+
+	for {
+		select {
+		case <-ctx.Done():
+			sf.logger.Info("Session finder worker stopping")
+			return
+		case <-sf.reqChannel:
+			sessions, err := sf.getAllSessions()
+			sf.resChannel <- SessionResult{Sessions: sessions, Err: err}
+		}
+	}
+}
+
+func (sf *wcaSessionFinder) getAllSessions() ([]Session, error) {
+	sessions := []Session{}
 
 	// ensure we have a device enumerator
 	if err := sf.getDeviceEnumerator(); err != nil {
@@ -178,12 +229,26 @@ func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
 	return sessions, nil
 }
 
+func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
+	sf.lock.Lock()
+	defer sf.lock.Unlock()
+
+	sf.reqChannel <- struct{}{}
+	result := <-sf.resChannel
+
+	return result.Sessions, result.Err
+}
+
 func (sf *wcaSessionFinder) Release() error {
 
 	// skip unregistering the mmnotificationclient, as it's not implemented in go-wca
 	if sf.mmDeviceEnumerator != nil {
 		sf.mmDeviceEnumerator.Release()
 	}
+
+	sf.workerCancel()
+	// close(sf.reqChannel)
+	// close(sf.resChannel)
 
 	sf.logger.Debug("Released WCA session finder instance")
 
