@@ -162,8 +162,13 @@ func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
 			sf.logger.Info("Session finder worker stopping")
 			return
 		case <-sf.reqChannel:
+			start := time.Now()
+
 			sessions, err := sf.getAllSessions()
 			sf.resChannel <- SessionResult{Sessions: sessions, Err: err}
+
+			elapsed := time.Since(start)
+			sf.logger.Debugf("Get all sessions took %s", elapsed)
 		}
 	}
 }
@@ -225,7 +230,6 @@ func (sf *wcaSessionFinder) getAllSessions() ([]Session, error) {
 		sf.logger.Warnw("Failed to enumerate device sessions", "error", err)
 		return nil, fmt.Errorf("enumerate device sessions: %w", err)
 	}
-
 	return sessions, nil
 }
 
@@ -502,98 +506,123 @@ func (sf *wcaSessionFinder) enumerateAndAddProcessSessions(
 
 	sf.logger.Debugw("Got session count from session enumerator", "count", sessionCount)
 
+	wg := sync.WaitGroup{}
+	sm := sync.Mutex{}
+	errCh := make(chan error, sessionCount)
+
 	// for each session:
 	for sessionIdx := 0; sessionIdx < sessionCount; sessionIdx++ {
 
-		// get the IAudioSessionControl
-		var audioSessionControl *wca.IAudioSessionControl
-		if err := sessionEnumerator.GetSession(sessionIdx, &audioSessionControl); err != nil {
-			sf.logger.Warnw("Failed to get session from session enumerator",
-				"error", err,
-				"sessionIdx", sessionIdx)
+		wg.Add(1)
+		go func(sessionIdx int) {
+			defer wg.Done()
 
-			return fmt.Errorf("get session %d from enumerator: %w", sessionIdx, err)
-		}
-
-		// query its IAudioSessionControl2
-		dispatch, err := audioSessionControl.QueryInterface(wca.IID_IAudioSessionControl2)
-		if err != nil {
-			sf.logger.Warnw("Failed to query session's IAudioSessionControl2",
-				"error", err,
-				"sessionIdx", sessionIdx)
-
-			return fmt.Errorf("query session %d IAudioSessionControl2: %w", sessionIdx, err)
-		}
-
-		// we no longer need the IAudioSessionControl, release it
-		audioSessionControl.Release()
-
-		// receive a useful object instead of our dispatch
-		audioSessionControl2 := (*wca.IAudioSessionControl2)(unsafe.Pointer(dispatch))
-
-		var pid uint32
-
-		// get the session's PID
-		if err := audioSessionControl2.GetProcessId(&pid); err != nil {
-
-			// if this is the system sounds session, GetProcessId will error with an undocumented
-			// AUDCLNT_S_NO_CURRENT_PROCESS (0x889000D) - this is fine, we actually want to treat it a bit differently
-			// The first part of this condition will be true if the call to IsSystemSoundsSession fails
-			// The second part will be true if the original error mesage from GetProcessId doesn't contain this magical
-			// error code (in decimal format).
-			isSystemSoundsErr := audioSessionControl2.IsSystemSoundsSession()
-			if isSystemSoundsErr != nil && !strings.Contains(err.Error(), "143196173") {
-
-				// of course, if it's not the system sounds session, we got a problem
-				sf.logger.Warnw("Failed to query session's pid",
-					"error", err,
-					"isSystemSoundsError", isSystemSoundsErr,
-					"sessionIdx", sessionIdx)
-
-				return fmt.Errorf("query session %d pid: %w", sessionIdx, err)
-			}
-
-			// update 2020/08/31: this is also the exact case for UWP applications, so we should no longer override the PID.
-			// it will successfully update whenever we call GetProcessId for e.g. Video.UI.exe, despite the error being non-nil.
-		}
-
-		// get its ISimpleAudioVolume
-		dispatch, err = audioSessionControl2.QueryInterface(wca.IID_ISimpleAudioVolume)
-		if err != nil {
-			sf.logger.Warnw("Failed to query session's ISimpleAudioVolume",
-				"error", err,
-				"sessionIdx", sessionIdx)
-
-			return fmt.Errorf("query session %d ISimpleAudioVolume: %w", sessionIdx, err)
-		}
-
-		// make it useful, again
-		simpleAudioVolume := (*wca.ISimpleAudioVolume)(unsafe.Pointer(dispatch))
-
-		// create the deej session object
-		newSession, err := newWCASession(sf.sessionLogger, audioSessionControl2, simpleAudioVolume, pid, sf.eventCtx)
-		if err != nil {
-
-			// this could just mean this process is already closed by now, and the session will be cleaned up later by the OS
-			if !errors.Is(err, errNoSuchProcess) {
-				sf.logger.Warnw("Failed to create new WCA session instance",
+			// get the IAudioSessionControl
+			var audioSessionControl *wca.IAudioSessionControl
+			if err := sessionEnumerator.GetSession(sessionIdx, &audioSessionControl); err != nil {
+				sf.logger.Warnw("Failed to get session from session enumerator",
 					"error", err,
 					"sessionIdx", sessionIdx)
 
-				return fmt.Errorf("create wca session for session %d: %w", sessionIdx, err)
+				errCh <- fmt.Errorf("get session %d from enumerator: %w", sessionIdx, err)
+				return
 			}
 
-			// in this case, log it and release the session's handles, then skip to the next one
-			sf.logger.Debugw("Process already exited, skipping session and releasing handles", "pid", pid)
+			// query its IAudioSessionControl2
+			dispatch, err := audioSessionControl.QueryInterface(wca.IID_IAudioSessionControl2)
+			if err != nil {
+				sf.logger.Warnw("Failed to query session's IAudioSessionControl2",
+					"error", err,
+					"sessionIdx", sessionIdx)
 
-			audioSessionControl2.Release()
-			simpleAudioVolume.Release()
+				errCh <- fmt.Errorf("query session %d IAudioSessionControl2: %w", sessionIdx, err)
+				return
+			}
 
-			continue
-		}
+			// we no longer need the IAudioSessionControl, release it
+			audioSessionControl.Release()
 
-		// add it to our slice
-		*sessions = append(*sessions, newSession)
+			// receive a useful object instead of our dispatch
+			audioSessionControl2 := (*wca.IAudioSessionControl2)(unsafe.Pointer(dispatch))
+
+			var pid uint32
+
+			// get the session's PID
+			if err := audioSessionControl2.GetProcessId(&pid); err != nil {
+
+				// if this is the system sounds session, GetProcessId will error with an undocumented
+				// AUDCLNT_S_NO_CURRENT_PROCESS (0x889000D) - this is fine, we actually want to treat it a bit differently
+				// The first part of this condition will be true if the call to IsSystemSoundsSession fails
+				// The second part will be true if the original error mesage from GetProcessId doesn't contain this magical
+				// error code (in decimal format).
+				isSystemSoundsErr := audioSessionControl2.IsSystemSoundsSession()
+				if isSystemSoundsErr != nil && !strings.Contains(err.Error(), "143196173") {
+
+					// of course, if it's not the system sounds session, we got a problem
+					sf.logger.Warnw("Failed to query session's pid",
+						"error", err,
+						"isSystemSoundsError", isSystemSoundsErr,
+						"sessionIdx", sessionIdx)
+
+					errCh <- fmt.Errorf("query session %d pid: %w", sessionIdx, err)
+					return
+				}
+
+				// update 2020/08/31: this is also the exact case for UWP applications, so we should no longer override the PID.
+				// it will successfully update whenever we call GetProcessId for e.g. Video.UI.exe, despite the error being non-nil.
+			}
+
+			// get its ISimpleAudioVolume
+			dispatch, err = audioSessionControl2.QueryInterface(wca.IID_ISimpleAudioVolume)
+			if err != nil {
+				sf.logger.Warnw("Failed to query session's ISimpleAudioVolume",
+					"error", err,
+					"sessionIdx", sessionIdx)
+
+				errCh <- fmt.Errorf("query session %d ISimpleAudioVolume: %w", sessionIdx, err)
+				return
+			}
+
+			// make it useful, again
+			simpleAudioVolume := (*wca.ISimpleAudioVolume)(unsafe.Pointer(dispatch))
+
+			// create the deej session object
+			newSession, err := newWCASession(sf.sessionLogger, audioSessionControl2, simpleAudioVolume, pid, sf.eventCtx)
+			if err != nil {
+
+				// this could just mean this process is already closed by now, and the session will be cleaned up later by the OS
+				if !errors.Is(err, errNoSuchProcess) {
+					sf.logger.Warnw("Failed to create new WCA session instance",
+						"error", err,
+						"sessionIdx", sessionIdx)
+
+					errCh <- fmt.Errorf("create wca session for session %d: %w", sessionIdx, err)
+					return
+				}
+
+				// in this case, log it and release the session's handles, then skip to the next one
+				sf.logger.Debugw("Process already exited, skipping session and releasing handles", "pid", pid)
+
+				audioSessionControl2.Release()
+				simpleAudioVolume.Release()
+
+				return
+			}
+
+			// add it to our slice
+			sm.Lock()
+			*sessions = append(*sessions, newSession)
+			sm.Unlock()
+
+		}(sessionIdx)
+
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		return err
 	}
 
 	return nil
