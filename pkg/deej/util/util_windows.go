@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -23,7 +24,33 @@ const (
 var (
 	lastGetCurrentWindowResult []string
 	lastGetCurrentWindowCall   = time.Now()
+	enumChildCallbackPtr       uintptr
+	enumChildOnce              sync.Once
 )
+
+type enumChildContext struct {
+	ownerPID uint32
+	result   *[]string
+}
+
+func enumChildWindowsCallback(childHWND, lParam uintptr) uintptr {
+	ctx := (*enumChildContext)(unsafe.Pointer(lParam))
+
+	var childPID uint32
+
+	_, err := windows.GetWindowThreadProcessId(windows.HWND(childHWND), &childPID)
+	if err != nil {
+		return 1
+	}
+
+	if childPID != ctx.ownerPID {
+		if actualProcess, err := ps.FindProcess(int(childPID)); err == nil && actualProcess != nil {
+			*ctx.result = append(*ctx.result, actualProcess.Executable())
+		}
+	}
+
+	return 1
+}
 
 func getCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
 
@@ -47,30 +74,6 @@ func getCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
 	// (like steam, and the league client, and any UWP app)
 
 	result := []string{}
-
-	// a callback that will be called for each child window of the foreground window, if it has any
-	enumChildWindowsCallback := func(childHWND *uintptr, lParam *uintptr) uintptr {
-
-		// cast the outer lp into something we can work with (maybe closures are good enough?)
-		ownerPID := (*uint32)(unsafe.Pointer(lParam))
-
-		// get the child window's real PID
-		var childPID uint32
-		windows.GetWindowThreadProcessId((windows.HWND)(unsafe.Pointer(childHWND)), &childPID)
-
-		// compare it to the parent's - if they're different, add the child window's process to our list of process names
-		if childPID != *ownerPID {
-
-			// warning: this can silently fail, needs to be tested more thoroughly and possibly reverted in the future
-			actualProcess, err := ps.FindProcess(int(childPID))
-			if err == nil {
-				result = append(result, actualProcess.Executable())
-			}
-		}
-
-		// indicates to the system to keep iterating
-		return 1
-	}
 
 	// get the current foreground window
 	hwnd := windows.GetForegroundWindow()
@@ -101,8 +104,18 @@ func getCurrentWindowProcessNames(checkFullscreen bool) ([]string, error) {
 	// add it to our result slice
 	result = append(result, process.Executable())
 
+	// create callback once
+	enumChildOnce.Do(func() {
+		enumChildCallbackPtr = syscall.NewCallback(enumChildWindowsCallback)
+	})
+
+	ctx := &enumChildContext{
+		ownerPID: ownerPID,
+		result:   &result,
+	}
+
 	// iterate its child windows, adding their names too
-	windows.EnumChildWindows(hwnd, syscall.NewCallback(enumChildWindowsCallback), (unsafe.Pointer(&ownerPID)))
+	windows.EnumChildWindows(hwnd, enumChildCallbackPtr, unsafe.Pointer(ctx))
 
 	// cache & return whichever executable names we ended up with
 	lastGetCurrentWindowResult = result
