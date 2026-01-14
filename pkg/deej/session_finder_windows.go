@@ -45,10 +45,6 @@ type wcaSessionFinder struct {
 	// event channels
 	sessionEventChan chan SessionEvent
 
-	// request/response channels for COM operations
-	getSessionsReqChan chan struct{}
-	getSessionsResChan chan getSessionsResult
-
 	// ready channel - closed when initialization is complete
 	ready    chan struct{}
 	initErr  error
@@ -101,17 +97,15 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sf := &wcaSessionFinder{
-		logger:             logger.Named("session_finder"),
-		sessionLogger:      logger.Named("sessions"),
-		eventCtx:           ole.NewGUID(myteriousGUID),
-		deviceManagers:     make(map[string]*deviceSessionManager),
-		trackedSessions:    make(map[string]*trackedSession),
-		sessionEventChan:   make(chan SessionEvent, sessionEventChanSize),
-		getSessionsReqChan: make(chan struct{}),
-		getSessionsResChan: make(chan getSessionsResult),
-		ready:              make(chan struct{}),
-		workerCtx:          ctx,
-		workerCancel:       cancel,
+		logger:           logger.Named("session_finder"),
+		sessionLogger:    logger.Named("sessions"),
+		eventCtx:         ole.NewGUID(myteriousGUID),
+		deviceManagers:   make(map[string]*deviceSessionManager),
+		trackedSessions:  make(map[string]*trackedSession),
+		sessionEventChan: make(chan SessionEvent, sessionEventChanSize),
+		ready:            make(chan struct{}),
+		workerCtx:        ctx,
+		workerCancel:     cancel,
 	}
 
 	sf.logger.Debug("Created WCA session finder instance")
@@ -207,9 +201,7 @@ func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
 	}
 
 	// Initialize master sessions
-	if err := sf.initializeMasterSessions(); err != nil {
-		sf.logger.Warnw("Failed to initialize master sessions", "error", err)
-	}
+	sf.initializeMasterSessions()
 
 	// Signal that initialization is complete
 	signalReady(nil)
@@ -278,47 +270,9 @@ func (sf *wcaSessionFinder) initializeAllDeviceManagers() error {
 	return nil
 }
 
-func (sf *wcaSessionFinder) initializeMasterSessions() error {
-	sf.lock.Lock()
-	defer sf.lock.Unlock()
-
-	// Initialize master output session
-	var mmOutDevice *wca.IMMDevice
-	if err := sf.mmDeviceEnumerator.GetDefaultAudioEndpoint(wca.ERender, wca.EConsole, &mmOutDevice); err != nil {
-		return fmt.Errorf("get default output endpoint: %w", err)
-	}
-	defer mmOutDevice.Release()
-
-	masterOut, err := sf.getMasterSession(mmOutDevice, masterSessionName, masterSessionName)
-	if err != nil {
-		return fmt.Errorf("create master output session: %w", err)
-	}
-	sf.masterOut = masterOut
-	sf.masterOutID = "master_output"
-
-	// Emit event for master output
-	sf.emitSessionEvent(SessionEvent{Type: SessionEventAdded, Session: masterOut, SessionID: sf.masterOutID})
-
-	// Initialize master input session (optional)
-	var mmInDevice *wca.IMMDevice
-	if err := sf.mmDeviceEnumerator.GetDefaultAudioEndpoint(wca.ECapture, wca.EConsole, &mmInDevice); err != nil {
-		sf.logger.Debug("No default input device available")
-	} else {
-		defer mmInDevice.Release()
-
-		masterIn, err := sf.getMasterSession(mmInDevice, inputSessionName, inputSessionName)
-		if err != nil {
-			sf.logger.Warnw("Failed to create master input session", "error", err)
-		} else {
-			sf.masterIn = masterIn
-			sf.masterInID = "master_input"
-
-			// Emit event for master input
-			sf.emitSessionEvent(SessionEvent{Type: SessionEventAdded, Session: masterIn, SessionID: sf.masterInID})
-		}
-	}
-
-	return nil
+func (sf *wcaSessionFinder) initializeMasterSessions() {
+	sf.refreshMasterOutput()
+	sf.refreshMasterInput()
 }
 
 func (sf *wcaSessionFinder) emitSessionEvent(event SessionEvent) {
