@@ -32,8 +32,6 @@ type masterSession struct {
 	volume *wca.IAudioEndpointVolume
 
 	eventCtx *ole.GUID
-
-	stale bool // when set to true, we should refresh sessions on the next call to SetVolume
 }
 
 func newWCASession(
@@ -165,11 +163,6 @@ func (s *masterSession) GetVolume() float32 {
 }
 
 func (s *masterSession) SetVolume(v float32) error {
-	if s.stale {
-		s.logger.Warnw("Session expired because default device has changed, triggering session refresh")
-		return errRefreshSessions
-	}
-
 	if err := s.volume.SetMasterVolumeLevelScalar(v, s.eventCtx); err != nil {
 		s.logger.Warnw("Failed to set session volume",
 			"error", err,
@@ -191,8 +184,4 @@ func (s *masterSession) Release() {
 
 func (s *masterSession) String() string {
 	return fmt.Sprintf(sessionStringFormat, s.humanReadableDesc, s.GetVolume())
-}
-
-func (s *masterSession) markAsStale() {
-	s.stale = true
 }
