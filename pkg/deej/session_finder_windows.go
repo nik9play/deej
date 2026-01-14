@@ -724,7 +724,6 @@ func (sf *wcaSessionFinder) Release() error {
 	return nil
 }
 
-//nolint:revive
 func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
 	flow wca.EDataFlow, role wca.ERole, pwstrDeviceID string,
 ) error {
