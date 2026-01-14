@@ -29,10 +29,12 @@ type wcaSessionFinder struct {
 	lastDefaultDeviceChange time.Time
 
 	// our master input and output sessions
-	masterOut   *masterSession
-	masterIn    *masterSession
-	masterOutID string // session ID for event tracking
-	masterInID  string // session ID for event tracking
+	masterOut     *masterSession
+	masterIn      *masterSession
+	masterOutID   string
+	masterInID    string
+	masterInLock  sync.RWMutex
+	masterOutLock sync.RWMutex
 
 	// per-device session managers (persistent)
 	deviceManagers     map[string]*deviceSessionManager
@@ -50,15 +52,8 @@ type wcaSessionFinder struct {
 	initErr  error
 	initOnce sync.Once
 
-	lock sync.Mutex
-
 	workerCtx    context.Context
 	workerCancel context.CancelFunc
-}
-
-type getSessionsResult struct {
-	sessions []Session
-	err      error
 }
 
 // deviceSessionManager holds persistent references for a single audio device
@@ -290,14 +285,14 @@ func (sf *wcaSessionFinder) createDeviceManager(device *wca.IMMDevice) error {
 		return fmt.Errorf("get device ID: %w", err)
 	}
 
-	sf.deviceManagersLock.Lock()
-	defer sf.deviceManagersLock.Unlock()
-
 	// Check if we already have a manager for this device
+	sf.deviceManagersLock.RLock()
 	if _, exists := sf.deviceManagers[deviceIDStr]; exists {
+		sf.deviceManagersLock.RUnlock()
 		device.Release()
 		return nil
 	}
+	sf.deviceManagersLock.RUnlock()
 
 	// Get endpoint type to determine if it's an output device
 	dispatch, err := device.QueryInterface(wca.IID_IMMEndpoint)
@@ -357,7 +352,10 @@ func (sf *wcaSessionFinder) createDeviceManager(device *wca.IMMDevice) error {
 		sf.enumerateDeviceSessions(dm)
 	}
 
+	sf.deviceManagersLock.Lock()
 	sf.deviceManagers[deviceIDStr] = dm
+	sf.deviceManagersLock.Unlock()
+
 	sf.logger.Debugw("Created device manager", "deviceID", deviceIDStr, "isOutput", isOutput)
 
 	return nil
@@ -596,14 +594,17 @@ func (sf *wcaSessionFinder) getAllSessionsInternal() ([]Session, error) {
 	sessions := []Session{}
 
 	// Add master sessions
-	sf.lock.Lock()
+	sf.masterOutLock.RLock()
 	if sf.masterOut != nil {
 		sessions = append(sessions, sf.masterOut)
 	}
+	sf.masterOutLock.RUnlock()
+
+	sf.masterInLock.RLock()
 	if sf.masterIn != nil {
 		sessions = append(sessions, sf.masterIn)
 	}
-	sf.lock.Unlock()
+	sf.masterInLock.RUnlock()
 
 	// Add device master sessions
 	sf.deviceManagersLock.RLock()
@@ -705,8 +706,8 @@ func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
 }
 
 func (sf *wcaSessionFinder) refreshMasterOutput() {
-	sf.lock.Lock()
-	defer sf.lock.Unlock()
+	sf.masterOutLock.Lock()
+	defer sf.masterOutLock.Unlock()
 
 	// Remove old master output session
 	if sf.masterOut != nil {
@@ -743,8 +744,8 @@ func (sf *wcaSessionFinder) refreshMasterOutput() {
 }
 
 func (sf *wcaSessionFinder) refreshMasterInput() {
-	sf.lock.Lock()
-	defer sf.lock.Unlock()
+	sf.masterInLock.Lock()
+	defer sf.masterInLock.Unlock()
 
 	// Remove old master input session
 	if sf.masterIn != nil {
@@ -855,7 +856,9 @@ func (sf *wcaSessionFinder) deviceRemovedCallback(pwstrDeviceID string) error {
 func (sf *wcaSessionFinder) deviceStateChangedCallback(pwstrDeviceID string, dwNewState uint64) error {
 	sf.logger.Debugw("Device state changed", "deviceID", pwstrDeviceID, "newState", dwNewState)
 
+	sf.deviceManagersLock.RLock()
 	dm, exists := sf.deviceManagers[pwstrDeviceID]
+	sf.deviceManagersLock.RUnlock()
 
 	if exists {
 		// dwNewState is always 0 because of bug in go-wca IMMNotificationClient implementation
