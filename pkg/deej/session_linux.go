@@ -1,7 +1,6 @@
 package deej
 
 import (
-	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -11,8 +10,6 @@ import (
 
 // normal PulseAudio volume (100%)
 const maxVolume = 0x10000
-
-var errNoSuchProcess = errors.New("No such process")
 
 type paSession struct {
 	baseSession
