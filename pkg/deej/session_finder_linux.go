@@ -25,9 +25,10 @@ type paSessionFinder struct {
 	masterSink   *masterSession
 	masterSource *masterSession
 	sinkInputs   map[uint32]*paSession
-	closed       bool
 
 	sessionEvents chan SessionEvent
+	reconnectCh   chan struct{}
+	stopCh        chan struct{}
 }
 
 func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
@@ -36,58 +37,56 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 		sessionLogger: logger.Named("sessions"),
 		sinkInputs:    make(map[uint32]*paSession),
 		sessionEvents: make(chan SessionEvent, sessionEventChanSize),
+		reconnectCh:   make(chan struct{}, 1),
+		stopCh:        make(chan struct{}),
 	}
 
 	if err := sf.connect(); err != nil {
 		return nil, err
 	}
 
+	go sf.connectionManager()
+
 	sf.logger.Debug("Created event-driven PA session finder")
 	return sf, nil
 }
 
-func (sf *paSessionFinder) connect() error {
-	client, conn, err := proto.Connect("")
-	if err != nil {
-		return fmt.Errorf("connect to PulseAudio: %w", err)
+func (sf *paSessionFinder) connectionManager() {
+	for {
+		select {
+		case <-sf.stopCh:
+			return
+		case <-sf.reconnectCh:
+			sf.handleReconnect()
+		}
 	}
-
-	if err := client.Request(&proto.SetClientName{
-		Props: proto.PropList{
-			"application.name": proto.PropListString("deej"),
-		},
-	}, &proto.SetClientNameReply{}); err != nil {
-		conn.Close()
-		return fmt.Errorf("set client name: %w", err)
-	}
-
-	sf.mu.Lock()
-	sf.client = client
-	sf.conn = conn
-	sf.mu.Unlock()
-
-	sf.refreshMaster()
-	sf.enumerateExistingSessions()
-
-	client.Callback = sf.onPulseEvent
-	if err := client.Request(&proto.Subscribe{
-		Mask: proto.SubscriptionMaskSinkInput | proto.SubscriptionMaskServer,
-	}, nil); err != nil {
-		conn.Close()
-		return fmt.Errorf("subscribe to events: %w", err)
-	}
-
-	return nil
 }
 
-func (sf *paSessionFinder) reconnect() {
-	sf.mu.Lock()
-	if sf.closed {
-		sf.mu.Unlock()
+func (sf *paSessionFinder) handleReconnect() {
+	sf.clearSessions()
+
+	for {
+		select {
+		case <-sf.stopCh:
+			return
+		default:
+		}
+
+		sf.logger.Debug("Attempting to reconnect to PulseAudio")
+		if err := sf.connect(); err != nil {
+			sf.logger.Debugw("Reconnect failed, retrying", "error", err)
+			time.Sleep(reconnectDelay)
+			continue
+		}
+		sf.logger.Info("Reconnected to PulseAudio")
 		return
 	}
+}
 
-	// Clear old sessions
+func (sf *paSessionFinder) clearSessions() {
+	sf.mu.Lock()
+	defer sf.mu.Unlock()
+
 	for _, s := range sf.sinkInputs {
 		sf.emitEvent(SessionEvent{Type: SessionEventRemoved, Session: s})
 		s.Release()
@@ -107,47 +106,63 @@ func (sf *paSessionFinder) reconnect() {
 
 	if sf.conn != nil {
 		sf.conn.Close()
+		sf.conn = nil
 	}
 	sf.client = nil
-	sf.conn = nil
+}
+
+func (sf *paSessionFinder) connect() error {
+	client, conn, err := proto.Connect("")
+	if err != nil {
+		return fmt.Errorf("connect to PulseAudio: %w", err)
+	}
+
+	client.Callback = sf.onPulseEvent
+
+	if err := client.Request(&proto.SetClientName{
+		Props: proto.PropList{"application.name": proto.PropListString("deej")},
+	}, &proto.SetClientNameReply{}); err != nil {
+		conn.Close()
+		return fmt.Errorf("set client name: %w", err)
+	}
+
+	sf.mu.Lock()
+	sf.client = client
+	sf.conn = conn
 	sf.mu.Unlock()
 
-	// Retry until successful
-	for {
-		sf.logger.Info("Attempting to reconnect to PulseAudio...")
-		if err := sf.connect(); err != nil {
-			sf.logger.Warnw("Reconnect failed, retrying", "error", err)
-			time.Sleep(reconnectDelay)
+	sf.refreshMaster()
+	sf.enumerateExistingSessions()
 
-			sf.mu.RLock()
-			closed := sf.closed
-			sf.mu.RUnlock()
-			if closed {
-				return
-			}
-			continue
-		}
-		sf.logger.Info("Reconnected to PulseAudio")
-		return
+	if err := client.Request(&proto.Subscribe{
+		Mask: proto.SubscriptionMaskSinkInput | proto.SubscriptionMaskServer,
+	}, nil); err != nil {
+		conn.Close()
+		return fmt.Errorf("subscribe to events: %w", err)
+	}
+
+	return nil
+}
+
+func (sf *paSessionFinder) requestReconnect() {
+	select {
+	case sf.reconnectCh <- struct{}{}:
+	default:
 	}
 }
 
-func (sf *paSessionFinder) onPulseEvent(msg interface{}) {
+func (sf *paSessionFinder) onPulseEvent(msg any) {
 	switch v := msg.(type) {
 	case *proto.SubscribeEvent:
-		facility := v.Event.GetFacility()
-		eventType := v.Event.GetType()
-
-		switch facility {
+		switch v.Event.GetFacility() {
 		case proto.EventSinkSinkInput:
-			go sf.handleSinkInputEvent(eventType, v.Index)
+			go sf.handleSinkInputEvent(v.Event.GetType(), v.Index)
 		case proto.EventServer:
 			go sf.refreshMaster()
 		}
-
 	case *proto.ConnectionClosed:
-		sf.logger.Warn("PulseAudio connection closed")
-		go sf.reconnect()
+		sf.logger.Warn("PulseAudio connection closed, trying to reconnect")
+		sf.requestReconnect()
 	}
 }
 
@@ -175,7 +190,7 @@ func (sf *paSessionFinder) refreshMasterSink() {
 
 	reply := proto.GetSinkInfoReply{}
 	if err := client.Request(&proto.GetSinkInfo{SinkIndex: proto.Undefined}, &reply); err != nil {
-		sf.logger.Warnw("Failed to get master sink info", "error", err)
+		sf.logger.Debugw("Failed to get master sink info", "error", err)
 		return
 	}
 
@@ -201,7 +216,7 @@ func (sf *paSessionFinder) refreshMasterSource() {
 
 	reply := proto.GetSourceInfoReply{}
 	if err := client.Request(&proto.GetSourceInfo{SourceIndex: proto.Undefined}, &reply); err != nil {
-		sf.logger.Warnw("Failed to get master source info", "error", err)
+		sf.logger.Debugw("Failed to get master source info", "error", err)
 		return
 	}
 
@@ -227,7 +242,7 @@ func (sf *paSessionFinder) enumerateExistingSessions() {
 
 	reply := proto.GetSinkInputInfoListReply{}
 	if err := client.Request(&proto.GetSinkInputInfoList{}, &reply); err != nil {
-		sf.logger.Warnw("Failed to enumerate sessions", "error", err)
+		sf.logger.Errorw("Failed to enumerate sessions", "error", err)
 		return
 	}
 
@@ -323,15 +338,14 @@ func (sf *paSessionFinder) SubscribeToSessionEvents() <-chan SessionEvent {
 }
 
 func (sf *paSessionFinder) Release() error {
+	close(sf.stopCh)
+
 	sf.mu.Lock()
-	sf.closed = true
 	conn := sf.conn
 	sf.mu.Unlock()
 
 	if conn != nil {
-		if err := conn.Close(); err != nil {
-			return fmt.Errorf("close PulseAudio connection: %w", err)
-		}
+		conn.Close()
 	}
 	sf.logger.Debug("Released PA session finder")
 	return nil
