@@ -31,6 +31,7 @@ type Deej struct {
 	config    *CanonicalConfig
 	serial    *SerialIO
 	sessions  *sessionMap
+	obs       *OBSClient
 	bundle    *i18n.Bundle
 	localizer *i18n.Localizer
 
@@ -97,6 +98,8 @@ func NewDeej(logger *zap.SugaredLogger, verbose bool, configPath string) (*Deej,
 	}
 
 	d.sessions = sessions
+
+	d.obs = NewOBSClient(d, logger)
 
 	logger.Debug("Created deej instance")
 
@@ -201,6 +204,8 @@ func (d *Deej) run() {
 	// connect to the arduino
 	d.serial.Start()
 
+	d.obs.Start()
+
 	// wait until stopped (gracefully)
 	<-d.stopChannel
 	d.logger.Debug("Stop channel signaled, terminating")
@@ -223,6 +228,7 @@ func (d *Deej) stop() error {
 
 	d.config.StopWatchingConfigFile()
 	d.serial.Stop()
+	d.obs.Stop()
 
 	// release the session map
 	if err := d.sessions.release(); err != nil {

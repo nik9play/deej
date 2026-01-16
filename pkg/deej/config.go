@@ -39,6 +39,13 @@ type CanonicalConfig struct {
 
 	AutoSearchVIDPID VIDPID
 
+	OBSConfig struct {
+		Enabled  bool
+		Host     string
+		Port     int
+		Password string
+	}
+
 	logger             *zap.SugaredLogger
 	notifier           notify.Notifier
 	stopWatcherChannel chan bool
@@ -64,6 +71,10 @@ const (
 	configKeyLanguage            = "language"
 	configKeyComVID              = "com_vid"
 	configKeyComPID              = "com_pid"
+	configKeyOBSEnabled          = "obs.enabled"
+	configKeyOBSHost             = "obs.host"
+	configKeyOBSPort             = "obs.port"
+	configKeyOBSPassword         = "obs.password"
 
 	defaultCOMPort  = "COM4"
 	defaultBaudRate = 9600
@@ -72,6 +83,11 @@ const (
 	// ch340 chip
 	defaultVID uint64 = 0x1A86
 	defaultPID uint64 = 0x7523
+
+	defaultOBSEnabled  = false
+	defaultOBSHost     = "localhost"
+	defaultOBSPort     = 4455
+	defaultOBSPassword = ""
 )
 
 // has to be defined as a non-constant because we're using path.Join
@@ -122,6 +138,10 @@ func NewConfig(logger *zap.SugaredLogger, notifier notify.Notifier, configPath s
 	userConfig.SetDefault(configKeyLanguage, defaultLanguage)
 	userConfig.SetDefault(configKeyComVID, defaultVID)
 	userConfig.SetDefault(configKeyComPID, defaultPID)
+	userConfig.SetDefault(configKeyOBSEnabled, defaultOBSEnabled)
+	userConfig.SetDefault(configKeyOBSHost, defaultOBSHost)
+	userConfig.SetDefault(configKeyOBSPort, defaultOBSPort)
+	userConfig.SetDefault(configKeyOBSPassword, defaultOBSPassword)
 
 	internalConfig := viper.New()
 	internalConfig.SetConfigName(internalConfigName)
@@ -332,7 +352,13 @@ func (cc *CanonicalConfig) populateFromVipers() error {
 
 	cc.AutoSearchVIDPID = VIDPID{VID: userConfigVID, PID: userConfigPID}
 
+	cc.OBSConfig.Enabled = cc.userConfig.GetBool(configKeyOBSEnabled)
+	cc.OBSConfig.Host = cc.userConfig.GetString(configKeyOBSHost)
+	cc.OBSConfig.Port = cc.userConfig.GetInt(configKeyOBSPort)
+	cc.OBSConfig.Password = cc.userConfig.GetString(configKeyOBSPassword)
+
 	cc.logger.Debugw("AutoSearchVIDPID", "val", cc.AutoSearchVIDPID)
+	cc.logger.Debugw("OBSConfig", "enabled", cc.OBSConfig.Enabled, "host", cc.OBSConfig.Host, "port", cc.OBSConfig.Port)
 	cc.logger.Debugw("Populated config fields from vipers")
 
 	return nil

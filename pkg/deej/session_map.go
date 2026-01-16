@@ -34,6 +34,9 @@ const (
 	// this prefix identifies those targets to ensure they don't contradict with another similarly-named process
 	specialTargetTransformPrefix = "deej."
 
+	// obs targets are handled directly via OBS WebSocket API
+	obsTargetPrefix = "deej.obs:"
+
 	// targets the currently active window (Windows-only, experimental)
 	specialTargetCurrentWindow = "current"
 
@@ -227,6 +230,14 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 	// for each possible target for this slider...
 	for _, target := range targets {
 
+		// handle OBS targets directly via WebSocket API
+		if m.isOBSTarget(target) {
+			inputName := target[len(obsTargetPrefix):]
+			m.handleOBSTarget(inputName, event.PercentValue)
+			targetFound = true
+			continue
+		}
+
 		// resolve the target name by cleaning it up and applying any special transformations.
 		// depending on the transformation applied, this can result in more than one target name
 		resolvedTargets := m.resolveTarget(target)
@@ -267,6 +278,20 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 		// when a session's SetVolume call errored, such as in the case of a stale master session
 		// (or another, more catastrophic failure happens)
 		m.refreshSessions(true)
+	}
+}
+
+func (m *sessionMap) isOBSTarget(target string) bool {
+	return strings.HasPrefix(strings.ToLower(target), obsTargetPrefix)
+}
+
+func (m *sessionMap) handleOBSTarget(inputName string, volume float32) {
+	if m.deej.obs == nil || !m.deej.obs.IsConnected() {
+		return
+	}
+
+	if err := m.deej.obs.SetInputVolume(inputName, volume); err != nil {
+		m.logger.Debugw("Failed to set OBS input volume", "input", inputName, "error", err)
 	}
 }
 
