@@ -88,7 +88,6 @@ func (m *sessionMap) notifySessionCountChange() {
 }
 
 func (m *sessionMap) initialize() error {
-	m.setupOnConfigReload()
 	m.setupOnSliderMove()
 
 	// Check if the session finder supports event-driven tracking
@@ -98,6 +97,7 @@ func (m *sessionMap) initialize() error {
 		m.setupOnSessionEvents(eventDrivenFinder)
 		m.logger.Info("Using event-driven session tracking")
 	} else {
+		m.setupOnConfigReload()
 		// Polling mode - get all sessions now
 		if err := m.getAndAddSessions(); err != nil {
 			m.logger.Warnw("Failed to get all sessions during session map initialization", "error", err)
