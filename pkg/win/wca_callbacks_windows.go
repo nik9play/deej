@@ -1,4 +1,4 @@
-package deej
+package win
 
 import (
 	"syscall"

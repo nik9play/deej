@@ -15,6 +15,8 @@ import (
 	ole "github.com/go-ole/go-ole"
 	wca "github.com/moutend/go-wca/pkg/wca"
 	"go.uber.org/zap"
+
+	"github.com/nik9play/deej/pkg/win"
 )
 
 type wcaSessionFinder struct {
@@ -61,7 +63,7 @@ type deviceSessionManager struct {
 	deviceID            string
 	device              *wca.IMMDevice
 	sessionManager      *wca.IAudioSessionManager2
-	sessionNotification *IAudioSessionNotification
+	sessionNotification *win.IAudioSessionNotification
 	masterSession       *masterSession // device-specific master volume session
 	isOutput            bool           // only output devices have process sessions
 }
@@ -69,7 +71,7 @@ type deviceSessionManager struct {
 // trackedSession holds a session with its registered event callback
 type trackedSession struct {
 	session       Session
-	eventCallback *IAudioSessionEvents
+	eventCallback *win.IAudioSessionEvents
 	control       *wca.IAudioSessionControl
 }
 
@@ -334,13 +336,13 @@ func (sf *wcaSessionFinder) createDeviceManager(device *wca.IMMDevice) error {
 
 	// Only register for session notifications on output devices (they have process sessions)
 	if isOutput {
-		notificationCallback := IAudioSessionNotificationCallback{
+		notificationCallback := win.IAudioSessionNotificationCallback{
 			OnSessionCreated: func(newSession *wca.IAudioSessionControl) error {
 				return sf.onSessionCreated(deviceIDStr, newSession)
 			},
 		}
 
-		dm.sessionNotification = NewIAudioSessionNotification(notificationCallback)
+		dm.sessionNotification = win.NewIAudioSessionNotification(notificationCallback)
 
 		if err := sessionManager.RegisterSessionNotification(dm.sessionNotification.ToWCA()); err != nil {
 			sf.logger.Warnw("Failed to register session notification", "deviceID", deviceIDStr, "error", err)
@@ -447,7 +449,7 @@ func (sf *wcaSessionFinder) addSessionFromControl(deviceID string, audioSessionC
 	sessionID := fmt.Sprintf("%s_%s_%d", deviceID, session.Key(), pid)
 
 	// Register session events callback
-	eventsCallback := IAudioSessionEventsCallback{
+	eventsCallback := win.IAudioSessionEventsCallback{
 		OnStateChanged: func(newState uint32) error {
 			if newState == wca.AudioSessionStateExpired {
 				sf.logger.Debugw("Session state changed to expired", "sessionID", sessionID)
@@ -462,7 +464,7 @@ func (sf *wcaSessionFinder) addSessionFromControl(deviceID string, audioSessionC
 		},
 	}
 
-	sessionEvents := NewIAudioSessionEvents(eventsCallback)
+	sessionEvents := win.NewIAudioSessionEvents(eventsCallback)
 
 	if err := audioSessionControl.RegisterAudioSessionNotification(sessionEvents.ToWCA()); err != nil {
 		sf.logger.Warnw("Failed to register audio session notification", "sessionID", sessionID, "error", err)

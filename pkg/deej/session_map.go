@@ -189,9 +189,6 @@ func (m *sessionMap) setupOnSessionEvents(finder EventDrivenSessionFinder) {
 func (m *sessionMap) handleSessionAdded(event SessionEvent) {
 	m.logger.Debugw("Session added event received", "session", event.Session)
 
-	time.Sleep(time.Second)
-	m.logger.Debugw("Test", "value", event.Session.GetVolume())
-
 	// Add to the main map
 	m.add(event.Session)
 
