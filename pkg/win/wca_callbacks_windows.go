@@ -296,3 +296,165 @@ func NewIAudioSessionNotification(callback IAudioSessionNotificationCallback) *I
 func (asn *IAudioSessionNotification) ToWCA() *wca.IAudioSessionNotification {
 	return (*wca.IAudioSessionNotification)(unsafe.Pointer(asn))
 }
+
+// IMMNotificationClientCallback contains the callback functions for device notifications
+// This is a fixed version of go-wca's implementation that correctly passes dwNewState
+type IMMNotificationClientCallback struct {
+	OnDeviceStateChanged   func(pwstrDeviceId string, dwNewState uint32) error
+	OnDeviceAdded          func(pwstrDeviceId string) error
+	OnDeviceRemoved        func(pwstrDeviceId string) error
+	OnDefaultDeviceChanged func(flow wca.EDataFlow, role wca.ERole, pwstrDefaultDeviceId string) error
+	OnPropertyValueChanged func(pwstrDeviceId string, key uint64) error
+}
+
+// IMMNotificationClient is a COM callback interface for device notifications
+type IMMNotificationClient struct {
+	vTable   *iMMNotificationClientVtbl
+	refCount int
+	callback IMMNotificationClientCallback
+}
+
+type iMMNotificationClientVtbl struct {
+	ole.IUnknownVtbl
+	OnDeviceStateChanged   uintptr
+	OnDeviceAdded          uintptr
+	OnDeviceRemoved        uintptr
+	OnDefaultDeviceChanged uintptr
+	OnPropertyValueChanged uintptr
+}
+
+func mmncQueryInterface(this uintptr, riid *ole.GUID, ppInterface *uintptr) int64 {
+	*ppInterface = 0
+
+	if ole.IsEqualGUID(riid, ole.IID_IUnknown) ||
+		ole.IsEqualGUID(riid, wca.IID_IMMNotificationClient) {
+		mmncAddRef(this)
+		*ppInterface = this
+		return ole.S_OK
+	}
+
+	return ole.E_NOINTERFACE
+}
+
+func mmncAddRef(this uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+	mmnc.refCount++
+	return int64(mmnc.refCount)
+}
+
+func mmncRelease(this uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+	mmnc.refCount--
+	return int64(mmnc.refCount)
+}
+
+func mmncOnDeviceStateChanged(this uintptr, pwstrDeviceId uintptr, dwNewState uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+
+	if mmnc.callback.OnDeviceStateChanged == nil {
+		return ole.S_OK
+	}
+
+	device := wca.LPCWSTRToString(pwstrDeviceId, 1024)
+
+	// Fixed: pass actual dwNewState instead of hardcoded 0
+	if err := mmnc.callback.OnDeviceStateChanged(device, uint32(dwNewState)); err != nil {
+		return ole.E_FAIL
+	}
+
+	return ole.S_OK
+}
+
+func mmncOnDeviceAdded(this uintptr, pwstrDeviceId uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+
+	if mmnc.callback.OnDeviceAdded == nil {
+		return ole.S_OK
+	}
+
+	device := wca.LPCWSTRToString(pwstrDeviceId, 1024)
+
+	if err := mmnc.callback.OnDeviceAdded(device); err != nil {
+		return ole.E_FAIL
+	}
+
+	return ole.S_OK
+}
+
+func mmncOnDeviceRemoved(this uintptr, pwstrDeviceId uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+
+	if mmnc.callback.OnDeviceRemoved == nil {
+		return ole.S_OK
+	}
+
+	device := wca.LPCWSTRToString(pwstrDeviceId, 1024)
+
+	if err := mmnc.callback.OnDeviceRemoved(device); err != nil {
+		return ole.E_FAIL
+	}
+
+	return ole.S_OK
+}
+
+func mmncOnDefaultDeviceChanged(this uintptr, flow, role uint64, pwstrDeviceId uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+
+	if mmnc.callback.OnDefaultDeviceChanged == nil {
+		return ole.S_OK
+	}
+
+	device := wca.LPCWSTRToString(pwstrDeviceId, 1024)
+
+	if err := mmnc.callback.OnDefaultDeviceChanged(wca.EDataFlow(flow), wca.ERole(role), device); err != nil {
+		return ole.E_FAIL
+	}
+
+	return ole.S_OK
+}
+
+func mmncOnPropertyValueChanged(this uintptr, pwstrDeviceId uintptr, key uintptr) int64 {
+	mmnc := (*IMMNotificationClient)(unsafe.Pointer(this))
+
+	if mmnc.callback.OnPropertyValueChanged == nil {
+		return ole.S_OK
+	}
+
+	device := wca.LPCWSTRToString(pwstrDeviceId, 1024)
+
+	// Fixed: pass actual key instead of hardcoded 0
+	if err := mmnc.callback.OnPropertyValueChanged(device, uint64(key)); err != nil {
+		return ole.E_FAIL
+	}
+
+	return ole.S_OK
+}
+
+// NewIMMNotificationClient creates a new IMMNotificationClient callback interface
+// This is a fixed version that correctly passes dwNewState in OnDeviceStateChanged
+func NewIMMNotificationClient(callback IMMNotificationClientCallback) *IMMNotificationClient {
+	vTable := &iMMNotificationClientVtbl{}
+
+	// IUnknown methods
+	vTable.QueryInterface = syscall.NewCallback(mmncQueryInterface)
+	vTable.AddRef = syscall.NewCallback(mmncAddRef)
+	vTable.Release = syscall.NewCallback(mmncRelease)
+
+	// IMMNotificationClient methods
+	vTable.OnDeviceStateChanged = syscall.NewCallback(mmncOnDeviceStateChanged)
+	vTable.OnDeviceAdded = syscall.NewCallback(mmncOnDeviceAdded)
+	vTable.OnDeviceRemoved = syscall.NewCallback(mmncOnDeviceRemoved)
+	vTable.OnDefaultDeviceChanged = syscall.NewCallback(mmncOnDefaultDeviceChanged)
+	vTable.OnPropertyValueChanged = syscall.NewCallback(mmncOnPropertyValueChanged)
+
+	mmnc := &IMMNotificationClient{}
+	mmnc.vTable = vTable
+	mmnc.callback = callback
+
+	return mmnc
+}
+
+// ToWCA returns the pointer cast to wca.IMMNotificationClient for use with WCA functions
+func (mmnc *IMMNotificationClient) ToWCA() *wca.IMMNotificationClient {
+	return (*wca.IMMNotificationClient)(unsafe.Pointer(mmnc))
+}

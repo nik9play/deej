@@ -27,7 +27,7 @@ type wcaSessionFinder struct {
 
 	// needed for device change notifications
 	mmDeviceEnumerator      *wca.IMMDeviceEnumerator
-	mmNotificationClient    *wca.IMMNotificationClient
+	mmNotificationClient    *win.IMMNotificationClient
 	lastDefaultDeviceChange time.Time
 
 	// our master input and output sessions
@@ -222,16 +222,18 @@ func (sf *wcaSessionFinder) initializeDeviceEnumerator() error {
 	}
 
 	// Register for device change notifications
-	callback := wca.IMMNotificationClientCallback{
+	// Using our own IMMNotificationClient implementation to fix go-wca bug
+	// where dwNewState is always passed as 0
+	callback := win.IMMNotificationClientCallback{
 		OnDefaultDeviceChanged: sf.defaultDeviceChangedCallback,
 		OnDeviceAdded:          sf.deviceAddedCallback,
 		OnDeviceRemoved:        sf.deviceRemovedCallback,
 		OnDeviceStateChanged:   sf.deviceStateChangedCallback,
 	}
 
-	sf.mmNotificationClient = wca.NewIMMNotificationClient(callback)
+	sf.mmNotificationClient = win.NewIMMNotificationClient(callback)
 
-	if err := sf.mmDeviceEnumerator.RegisterEndpointNotificationCallback(sf.mmNotificationClient); err != nil {
+	if err := sf.mmDeviceEnumerator.RegisterEndpointNotificationCallback(sf.mmNotificationClient.ToWCA()); err != nil {
 		return fmt.Errorf("register endpoint notification callback: %w", err)
 	}
 
@@ -855,26 +857,13 @@ func (sf *wcaSessionFinder) deviceRemovedCallback(pwstrDeviceID string) error {
 	return nil
 }
 
-func (sf *wcaSessionFinder) deviceStateChangedCallback(pwstrDeviceID string, dwNewState uint64) error {
+func (sf *wcaSessionFinder) deviceStateChangedCallback(pwstrDeviceID string, dwNewState uint32) error {
 	sf.logger.Debugw("Device state changed", "deviceID", pwstrDeviceID, "newState", dwNewState)
 
-	sf.deviceManagersLock.RLock()
-	dm, exists := sf.deviceManagers[pwstrDeviceID]
-	sf.deviceManagersLock.RUnlock()
-
-	if exists {
-		// dwNewState is always 0 because of bug in go-wca IMMNotificationClient implementation
-		// So we need to query the device for its actual state
-		// TODO: fork go-wca and fix this and other issues
-		var state uint32
-		dm.device.GetState(&state)
-
-		if dwNewState != wca.DEVICE_STATE_ACTIVE {
-			// Device became active, try to create a manager
-			sf.removeDeviceManager(pwstrDeviceID)
-		}
-	} else {
+	if dwNewState == wca.DEVICE_STATE_ACTIVE {
 		sf.handleDeviceAdded(pwstrDeviceID)
+	} else {
+		sf.removeDeviceManager(pwstrDeviceID)
 	}
 
 	return nil
