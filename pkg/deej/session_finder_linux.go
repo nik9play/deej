@@ -26,6 +26,10 @@ type paSessionFinder struct {
 	masterSource *masterSession
 	sinkInputs   map[uint32]*paSession
 
+	// named device sessions (by index)
+	namedSinks   map[uint32]*masterSession
+	namedSources map[uint32]*masterSession
+
 	sessionEvents chan SessionEvent
 	reconnectCh   chan struct{}
 	stopCh        chan struct{}
@@ -36,6 +40,8 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 		logger:        logger.Named("session_finder"),
 		sessionLogger: logger.Named("sessions"),
 		sinkInputs:    make(map[uint32]*paSession),
+		namedSinks:    make(map[uint32]*masterSession),
+		namedSources:  make(map[uint32]*masterSession),
 		sessionEvents: make(chan SessionEvent, sessionEventChanSize),
 		reconnectCh:   make(chan struct{}, 1),
 		stopCh:        make(chan struct{}),
@@ -93,6 +99,18 @@ func (sf *paSessionFinder) clearSessions() {
 	}
 	sf.sinkInputs = make(map[uint32]*paSession)
 
+	for _, s := range sf.namedSinks {
+		sf.emitEvent(SessionEvent{Type: SessionEventRemoved, Session: s})
+		s.Release()
+	}
+	sf.namedSinks = make(map[uint32]*masterSession)
+
+	for _, s := range sf.namedSources {
+		sf.emitEvent(SessionEvent{Type: SessionEventRemoved, Session: s})
+		s.Release()
+	}
+	sf.namedSources = make(map[uint32]*masterSession)
+
 	if sf.masterSink != nil {
 		sf.emitEvent(SessionEvent{Type: SessionEventRemoved, Session: sf.masterSink})
 		sf.masterSink.Release()
@@ -133,9 +151,10 @@ func (sf *paSessionFinder) connect() error {
 
 	sf.refreshMaster()
 	sf.enumerateExistingSessions()
+	sf.enumerateExistingDevices()
 
 	if err := client.Request(&proto.Subscribe{
-		Mask: proto.SubscriptionMaskSinkInput | proto.SubscriptionMaskServer,
+		Mask: proto.SubscriptionMaskSinkInput | proto.SubscriptionMaskServer | proto.SubscriptionMaskSink | proto.SubscriptionMaskSource,
 	}, nil); err != nil {
 		conn.Close()
 		return fmt.Errorf("subscribe to events: %w", err)
@@ -159,6 +178,10 @@ func (sf *paSessionFinder) onPulseEvent(msg any) {
 			go sf.handleSinkInputEvent(v.Event.GetType(), v.Index)
 		case proto.EventServer:
 			go sf.refreshMaster()
+		case proto.EventSink:
+			go sf.handleSinkEvent(v.Event.GetType(), v.Index)
+		case proto.EventSource:
+			go sf.handleSourceEvent(v.Event.GetType(), v.Index)
 		}
 	case *proto.ConnectionClosed:
 		sf.logger.Warn("PulseAudio connection closed, trying to reconnect")
@@ -309,6 +332,180 @@ func (sf *paSessionFinder) removeSinkInput(index uint32) {
 	sf.logger.Debugw("Removed session", "index", index)
 }
 
+func (sf *paSessionFinder) enumerateExistingDevices() {
+	sf.enumerateExistingSinks()
+	sf.enumerateExistingSources()
+}
+
+func (sf *paSessionFinder) enumerateExistingSinks() {
+	sf.mu.RLock()
+	client := sf.client
+	sf.mu.RUnlock()
+	if client == nil {
+		return
+	}
+
+	reply := proto.GetSinkInfoListReply{}
+	if err := client.Request(&proto.GetSinkInfoList{}, &reply); err != nil {
+		sf.logger.Errorw("Failed to enumerate sinks", "error", err)
+		return
+	}
+
+	for _, info := range reply {
+		sf.addSinkFromInfo(info)
+	}
+	sf.logger.Debugw("Enumerated sinks", "count", len(reply))
+}
+
+func (sf *paSessionFinder) enumerateExistingSources() {
+	sf.mu.RLock()
+	client := sf.client
+	sf.mu.RUnlock()
+	if client == nil {
+		return
+	}
+
+	reply := proto.GetSourceInfoListReply{}
+	if err := client.Request(&proto.GetSourceInfoList{}, &reply); err != nil {
+		sf.logger.Errorw("Failed to enumerate sources", "error", err)
+		return
+	}
+
+	for _, info := range reply {
+		sf.addSourceFromInfo(info)
+	}
+	sf.logger.Debugw("Enumerated sources", "count", len(reply))
+}
+
+func (sf *paSessionFinder) handleSinkEvent(eventType proto.SubscriptionEventType, index uint32) {
+	switch eventType {
+	case proto.EventNew:
+		sf.addSink(index)
+	case proto.EventRemove:
+		sf.removeSink(index)
+	}
+}
+
+func (sf *paSessionFinder) handleSourceEvent(eventType proto.SubscriptionEventType, index uint32) {
+	switch eventType {
+	case proto.EventNew:
+		sf.addSource(index)
+	case proto.EventRemove:
+		sf.removeSource(index)
+	}
+}
+
+func (sf *paSessionFinder) addSink(index uint32) {
+	sf.mu.RLock()
+	client := sf.client
+	sf.mu.RUnlock()
+	if client == nil {
+		return
+	}
+
+	reply := proto.GetSinkInfoReply{}
+	if err := client.Request(&proto.GetSinkInfo{SinkIndex: index}, &reply); err != nil {
+		sf.logger.Debugw("Failed to get sink info", "index", index, "error", err)
+		return
+	}
+	sf.addSinkFromInfo(&reply)
+}
+
+func (sf *paSessionFinder) addSinkFromInfo(info *proto.GetSinkInfoReply) {
+	// Get description from properties, fallback to sink name
+	description := info.Device
+	if description == "" {
+		if desc, ok := info.Properties["device.description"]; ok {
+			description = desc.String()
+		}
+	}
+
+	sf.mu.Lock()
+	if _, exists := sf.namedSinks[info.SinkIndex]; exists {
+		sf.mu.Unlock()
+		return
+	}
+	session := newNamedMasterSession(sf.sessionLogger, sf.client, info.SinkIndex, info.Channels, true, description)
+	sf.namedSinks[info.SinkIndex] = session
+	sf.mu.Unlock()
+
+	sf.emitEvent(SessionEvent{Type: SessionEventAdded, Session: session})
+	sf.logger.Debugw("Added named sink", "index", info.SinkIndex, "description", description)
+}
+
+func (sf *paSessionFinder) addSource(index uint32) {
+	sf.mu.RLock()
+	client := sf.client
+	sf.mu.RUnlock()
+	if client == nil {
+		return
+	}
+
+	reply := proto.GetSourceInfoReply{}
+	if err := client.Request(&proto.GetSourceInfo{SourceIndex: index}, &reply); err != nil {
+		sf.logger.Debugw("Failed to get source info", "index", index, "error", err)
+		return
+	}
+	sf.addSourceFromInfo(&reply)
+}
+
+func (sf *paSessionFinder) addSourceFromInfo(info *proto.GetSourceInfoReply) {
+	// Skip monitor sources (they mirror sink outputs)
+	if info.MonitorSourceName != "" {
+		return
+	}
+
+	// Get description from properties, fallback to source name
+	description := info.Device
+	if description == "" {
+		if desc, ok := info.Properties["device.description"]; ok {
+			description = desc.String()
+		}
+	}
+
+	sf.mu.Lock()
+	if _, exists := sf.namedSources[info.SourceIndex]; exists {
+		sf.mu.Unlock()
+		return
+	}
+	session := newNamedMasterSession(sf.sessionLogger, sf.client, info.SourceIndex, info.Channels, false, description)
+	sf.namedSources[info.SourceIndex] = session
+	sf.mu.Unlock()
+
+	sf.emitEvent(SessionEvent{Type: SessionEventAdded, Session: session})
+	sf.logger.Debugw("Added named source", "index", info.SourceIndex, "description", description)
+}
+
+func (sf *paSessionFinder) removeSink(index uint32) {
+	sf.mu.Lock()
+	session, exists := sf.namedSinks[index]
+	if !exists {
+		sf.mu.Unlock()
+		return
+	}
+	delete(sf.namedSinks, index)
+	sf.mu.Unlock()
+
+	sf.emitEvent(SessionEvent{Type: SessionEventRemoved, Session: session})
+	session.Release()
+	sf.logger.Debugw("Removed named sink", "index", index)
+}
+
+func (sf *paSessionFinder) removeSource(index uint32) {
+	sf.mu.Lock()
+	session, exists := sf.namedSources[index]
+	if !exists {
+		sf.mu.Unlock()
+		return
+	}
+	delete(sf.namedSources, index)
+	sf.mu.Unlock()
+
+	sf.emitEvent(SessionEvent{Type: SessionEventRemoved, Session: session})
+	session.Release()
+	sf.logger.Debugw("Removed named source", "index", index)
+}
+
 func (sf *paSessionFinder) emitEvent(event SessionEvent) {
 	select {
 	case sf.sessionEvents <- event:
@@ -320,7 +517,7 @@ func (sf *paSessionFinder) GetAllSessions() ([]Session, error) {
 	sf.mu.RLock()
 	defer sf.mu.RUnlock()
 
-	sessions := make([]Session, 0, 2+len(sf.sinkInputs))
+	sessions := make([]Session, 0, 2+len(sf.sinkInputs)+len(sf.namedSinks)+len(sf.namedSources))
 	if sf.masterSink != nil {
 		sessions = append(sessions, sf.masterSink)
 	}
@@ -328,6 +525,12 @@ func (sf *paSessionFinder) GetAllSessions() ([]Session, error) {
 		sessions = append(sessions, sf.masterSource)
 	}
 	for _, s := range sf.sinkInputs {
+		sessions = append(sessions, s)
+	}
+	for _, s := range sf.namedSinks {
+		sessions = append(sessions, s)
+	}
+	for _, s := range sf.namedSources {
 		sessions = append(sessions, s)
 	}
 	return sessions, nil
