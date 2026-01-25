@@ -28,21 +28,19 @@ type wcaSessionFinder struct {
 	mmNotificationClient    *wca.IMMNotificationClient
 	lastDefaultDeviceChange time.Time
 
+	mu sync.RWMutex
+
 	// our master input and output sessions
-	masterOut     *masterSession
-	masterIn      *masterSession
-	masterOutID   string
-	masterInID    string
-	masterInLock  sync.RWMutex
-	masterOutLock sync.RWMutex
+	masterOut   *masterSession
+	masterIn    *masterSession
+	masterOutID string
+	masterInID  string
 
 	// per-device session managers (persistent)
-	deviceManagers     map[string]*deviceSessionManager
-	deviceManagersLock sync.RWMutex
+	deviceManagers map[string]*deviceSessionManager
 
 	// tracked sessions with their event callbacks
-	trackedSessions     map[string]*trackedSession
-	trackedSessionsLock sync.RWMutex
+	trackedSessions map[string]*trackedSession
 
 	// event channels
 	sessionEventChan chan SessionEvent
@@ -286,13 +284,13 @@ func (sf *wcaSessionFinder) createDeviceManager(device *wca.IMMDevice) error {
 	}
 
 	// Check if we already have a manager for this device
-	sf.deviceManagersLock.RLock()
+	sf.mu.RLock()
 	if _, exists := sf.deviceManagers[deviceIDStr]; exists {
-		sf.deviceManagersLock.RUnlock()
+		sf.mu.RUnlock()
 		device.Release()
 		return nil
 	}
-	sf.deviceManagersLock.RUnlock()
+	sf.mu.RUnlock()
 
 	// Get endpoint type to determine if it's an output device
 	dispatch, err := device.QueryInterface(wca.IID_IMMEndpoint)
@@ -352,9 +350,9 @@ func (sf *wcaSessionFinder) createDeviceManager(device *wca.IMMDevice) error {
 		sf.enumerateDeviceSessions(dm)
 	}
 
-	sf.deviceManagersLock.Lock()
+	sf.mu.Lock()
 	sf.deviceManagers[deviceIDStr] = dm
-	sf.deviceManagersLock.Unlock()
+	sf.mu.Unlock()
 
 	sf.logger.Debugw("Created device manager", "deviceID", deviceIDStr, "isOutput", isOutput)
 
@@ -468,10 +466,10 @@ func (sf *wcaSessionFinder) addSessionFromControl(deviceID string, audioSessionC
 		sf.logger.Warnw("Failed to register audio session notification", "sessionID", sessionID, "error", err)
 	}
 
-	sf.trackedSessionsLock.Lock()
+	sf.mu.Lock()
 	// Check if session already exists
 	if _, exists := sf.trackedSessions[sessionID]; exists {
-		sf.trackedSessionsLock.Unlock()
+		sf.mu.Unlock()
 		session.Release()
 		audioSessionControl.Release()
 		return nil
@@ -482,7 +480,7 @@ func (sf *wcaSessionFinder) addSessionFromControl(deviceID string, audioSessionC
 		eventCallback: sessionEvents,
 		control:       audioSessionControl,
 	}
-	sf.trackedSessionsLock.Unlock()
+	sf.mu.Unlock()
 
 	sf.emitSessionEvent(SessionEvent{Type: SessionEventAdded, Session: session, SessionID: sessionID})
 
@@ -491,14 +489,14 @@ func (sf *wcaSessionFinder) addSessionFromControl(deviceID string, audioSessionC
 }
 
 func (sf *wcaSessionFinder) removeSession(sessionID string) {
-	sf.trackedSessionsLock.Lock()
+	sf.mu.Lock()
 	tracked, exists := sf.trackedSessions[sessionID]
 	if !exists {
-		sf.trackedSessionsLock.Unlock()
+		sf.mu.Unlock()
 		return
 	}
 	delete(sf.trackedSessions, sessionID)
-	sf.trackedSessionsLock.Unlock()
+	sf.mu.Unlock()
 
 	// Unregister event callback
 	if tracked.control != nil && tracked.eventCallback != nil {
@@ -515,24 +513,24 @@ func (sf *wcaSessionFinder) removeSession(sessionID string) {
 }
 
 func (sf *wcaSessionFinder) removeDeviceManager(deviceID string) {
-	sf.deviceManagersLock.Lock()
+	sf.mu.Lock()
 	dm, exists := sf.deviceManagers[deviceID]
 	if !exists {
-		sf.deviceManagersLock.Unlock()
+		sf.mu.Unlock()
 		return
 	}
 	delete(sf.deviceManagers, deviceID)
-	sf.deviceManagersLock.Unlock()
+	sf.mu.Unlock()
 
 	// Remove all sessions associated with this device
-	sf.trackedSessionsLock.RLock()
+	sf.mu.RLock()
 	sessionsToRemove := make([]string, 0)
 	for sessionID := range sf.trackedSessions {
 		if strings.HasPrefix(sessionID, deviceID+"_") {
 			sessionsToRemove = append(sessionsToRemove, sessionID)
 		}
 	}
-	sf.trackedSessionsLock.RUnlock()
+	sf.mu.RUnlock()
 
 	for _, sessionID := range sessionsToRemove {
 		sf.removeSession(sessionID)
@@ -561,12 +559,12 @@ func (sf *wcaSessionFinder) removeDeviceManager(deviceID string) {
 }
 
 func (sf *wcaSessionFinder) cleanup() {
-	sf.deviceManagersLock.Lock()
+	sf.mu.Lock()
 	deviceIDs := make([]string, 0, len(sf.deviceManagers))
 	for id := range sf.deviceManagers {
 		deviceIDs = append(deviceIDs, id)
 	}
-	sf.deviceManagersLock.Unlock()
+	sf.mu.Unlock()
 
 	for _, id := range deviceIDs {
 		sf.removeDeviceManager(id)
@@ -591,36 +589,31 @@ func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
 
 // getAllSessionsInternal returns all currently tracked sessions
 func (sf *wcaSessionFinder) getAllSessionsInternal() ([]Session, error) {
+	sf.mu.RLock()
+	defer sf.mu.RUnlock()
+
 	sessions := []Session{}
 
 	// Add master sessions
-	sf.masterOutLock.RLock()
 	if sf.masterOut != nil {
 		sessions = append(sessions, sf.masterOut)
 	}
-	sf.masterOutLock.RUnlock()
 
-	sf.masterInLock.RLock()
 	if sf.masterIn != nil {
 		sessions = append(sessions, sf.masterIn)
 	}
-	sf.masterInLock.RUnlock()
 
 	// Add device master sessions
-	sf.deviceManagersLock.RLock()
 	for _, dm := range sf.deviceManagers {
 		if dm.masterSession != nil {
 			sessions = append(sessions, dm.masterSession)
 		}
 	}
-	sf.deviceManagersLock.RUnlock()
 
 	// Add all tracked process sessions
-	sf.trackedSessionsLock.RLock()
 	for _, tracked := range sf.trackedSessions {
 		sessions = append(sessions, tracked.session)
 	}
-	sf.trackedSessionsLock.RUnlock()
 
 	return sessions, nil
 }
@@ -706,8 +699,8 @@ func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
 }
 
 func (sf *wcaSessionFinder) refreshMasterOutput() {
-	sf.masterOutLock.Lock()
-	defer sf.masterOutLock.Unlock()
+	sf.mu.Lock()
+	defer sf.mu.Unlock()
 
 	// Remove old master output session
 	if sf.masterOut != nil {
@@ -744,8 +737,8 @@ func (sf *wcaSessionFinder) refreshMasterOutput() {
 }
 
 func (sf *wcaSessionFinder) refreshMasterInput() {
-	sf.masterInLock.Lock()
-	defer sf.masterInLock.Unlock()
+	sf.mu.Lock()
+	defer sf.mu.Unlock()
 
 	// Remove old master input session
 	if sf.masterIn != nil {
@@ -856,9 +849,9 @@ func (sf *wcaSessionFinder) deviceRemovedCallback(pwstrDeviceID string) error {
 func (sf *wcaSessionFinder) deviceStateChangedCallback(pwstrDeviceID string, dwNewState uint64) error {
 	sf.logger.Debugw("Device state changed", "deviceID", pwstrDeviceID, "newState", dwNewState)
 
-	sf.deviceManagersLock.RLock()
+	sf.mu.RLock()
 	dm, exists := sf.deviceManagers[pwstrDeviceID]
-	sf.deviceManagersLock.RUnlock()
+	sf.mu.RUnlock()
 
 	if exists {
 		// dwNewState is always 0 because of bug in go-wca IMMNotificationClient implementation
