@@ -6,13 +6,39 @@
 # windows only - you can use 'deej.current.fullscreen' to control the currently active full-screen app
 # windows only - you can use a device's full name, i.e. "Speakers (Realtek High Definition Audio)", to bind it. this works for both output and input devices
 # windows only - you can use 'system' to control the "system sounds" volume
+# you can use '!processname.exe' to exclude specific processes from deej.current and deej.current.fullscreen targets on that slider
 # important: slider indexes start at 0, regardless of which analog pins you're using!
 slider_mapping:
   0: firefox.exe
   1: discord.exe
-  2: deej.current.fullscreen
+  2:
+    - deej.current.fullscreen
+    - "!explorer.exe"          # exclude Windows Explorer from this slider
+    - "!dwm.exe"               # exclude Desktop Window Manager
   3: master
   4: mic
+
+# Examples of exclusion usage:
+# slider_mapping:
+#   0:
+#     - deej.current           # control currently active window
+#     - "!explorer.exe"        # except Windows Explorer
+#     - "!dwm.exe"             # and Desktop Window Manager
+#   1:
+#     - deej.current.fullscreen
+#     - "!applicationframehost.exe"  # exclude UWP container
+#   2:
+#     - firefox.exe
+#     - chrome.exe
+#   3:
+#     - deej.current           # different slider, different exclusions
+#     - "!spotify.exe"         # don't control Spotify on this slider
+#
+# Note: Exclusions (!) only affect deej.current and deej.current.fullscreen
+# They do NOT affect:
+# - Direct process name mappings (like "2: firefox.exe" above)
+# - deej.unmapped target
+# - Other sliders (each slider has its own exclusion list)
 
 # set this to true if you want the controls inverted (i.e. top is 0%, bottom is 100%)
 invert_sliders: false

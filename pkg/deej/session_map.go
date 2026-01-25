@@ -193,7 +193,7 @@ func (m *sessionMap) sessionMapped(session Session) bool {
 			}
 
 			// safe to assume this has a single element because we made sure there's no special transform
-			target = m.resolveTarget(target)[0]
+			target = m.resolveTarget(target, []string{})[0]
 
 			if target == session.Key() {
 				matchFound = true
@@ -214,11 +214,25 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 	}
 
 	// get the targets mapped to this slider from the config
-	targets, ok := m.deej.config.SliderMapping.get(event.SliderID)
+	allEntries, ok := m.deej.config.SliderMapping.get(event.SliderID)
 
 	// if slider not found in config, silently ignore
 	if !ok {
 		return
+	}
+
+	// separate regular targets from exclusions (entries starting with !)
+	targets := []string{}
+	exclusions := []string{}
+
+	for _, entry := range allEntries {
+		if strings.HasPrefix(entry, "!") {
+			// remove ! prefix and normalize to lowercase
+			excluded := strings.ToLower(strings.TrimPrefix(entry, "!"))
+			exclusions = append(exclusions, excluded)
+		} else {
+			targets = append(targets, entry)
+		}
 	}
 
 	targetFound := false
@@ -229,7 +243,7 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 
 		// resolve the target name by cleaning it up and applying any special transformations.
 		// depending on the transformation applied, this can result in more than one target name
-		resolvedTargets := m.resolveTarget(target)
+		resolvedTargets := m.resolveTarget(target, exclusions)
 
 		// for each resolved target...
 		for _, resolvedTarget := range resolvedTargets {
@@ -274,20 +288,20 @@ func (m *sessionMap) targetHasSpecialTransform(target string) bool {
 	return strings.HasPrefix(target, specialTargetTransformPrefix)
 }
 
-func (m *sessionMap) resolveTarget(target string) []string {
+func (m *sessionMap) resolveTarget(target string, exclusions []string) []string {
 
 	// start by ignoring the case
 	target = strings.ToLower(target)
 
 	// look for any special targets first, by examining the prefix
 	if m.targetHasSpecialTransform(target) {
-		return m.applyTargetTransform(strings.TrimPrefix(target, specialTargetTransformPrefix))
+		return m.applyTargetTransform(strings.TrimPrefix(target, specialTargetTransformPrefix), exclusions)
 	}
 
 	return []string{target}
 }
 
-func (m *sessionMap) applyTargetTransform(specialTargetName string) []string {
+func (m *sessionMap) applyTargetTransform(specialTargetName string, exclusions []string) []string {
 	checkFullscreen := false
 
 	// select the transformation based on its name
@@ -313,7 +327,17 @@ func (m *sessionMap) applyTargetTransform(specialTargetName string) []string {
 		}
 
 		// remove dupes
-		return funk.UniqString(currentWindowProcessNames)
+		currentWindowProcessNames = funk.UniqString(currentWindowProcessNames)
+
+		// filter out excluded sessions (only for deej.current targets)
+		if len(exclusions) > 0 {
+			currentWindowProcessNames = funk.FilterString(currentWindowProcessNames, func(name string) bool {
+				// name is already lowercase from applyTargetTransform
+				return !funk.ContainsString(exclusions, name)
+			})
+		}
+
+		return currentWindowProcessNames
 
 	// get currently unmapped sessions
 	case specialTargetAllUnmapped:
