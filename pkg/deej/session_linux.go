@@ -64,7 +64,24 @@ func newMasterSession(
 	streamChannels byte,
 	isOutput bool,
 ) *masterSession {
+	var key string
+	if isOutput {
+		key = masterSessionName
+	} else {
+		key = inputSessionName
+	}
 
+	return newNamedMasterSession(logger, client, streamIndex, streamChannels, isOutput, key)
+}
+
+func newNamedMasterSession(
+	logger *zap.SugaredLogger,
+	client *proto.Client,
+	streamIndex uint32,
+	streamChannels byte,
+	isOutput bool,
+	name string,
+) *masterSession {
 	s := &masterSession{
 		client:         client,
 		streamIndex:    streamIndex,
@@ -72,18 +89,10 @@ func newMasterSession(
 		isOutput:       isOutput,
 	}
 
-	var key string
-
-	if isOutput {
-		key = masterSessionName
-	} else {
-		key = inputSessionName
-	}
-
-	s.logger = logger.Named(key)
+	s.logger = logger.Named(name)
 	s.master = true
-	s.name = key
-	s.humanReadableDesc = key
+	s.name = name
+	s.humanReadableDesc = name
 
 	s.logger.Debugw(sessionCreationLogMessage, "session", s)
 
