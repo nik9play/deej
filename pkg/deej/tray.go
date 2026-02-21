@@ -129,6 +129,11 @@ func getValuesString(d *Deej) string {
 	return strings.Join(strs, " | ")
 }
 
+func getSessionsCountString(d *Deej) string {
+	count := d.sessions.getSessionCount()
+	return strconv.Itoa(count) + " audio sessions"
+}
+
 func (d *Deej) initializeTray(onDone func()) {
 	logger := d.logger.Named("tray")
 
@@ -185,6 +190,13 @@ func (d *Deej) initializeTray(onDone func()) {
 		}
 		setValuesInfo()
 
+		sessionsInfo := systray.AddMenuItem(getSessionsCountString(d), "")
+		sessionsInfo.Disable()
+
+		setSessionsInfo := func() {
+			sessionsInfo.SetTitle(getSessionsCountString(d))
+		}
+
 		if d.version != "" {
 			versionInfo := systray.AddMenuItem(d.version, "")
 			versionInfo.Disable()
@@ -197,6 +209,7 @@ func (d *Deej) initializeTray(onDone func()) {
 
 		sliderMovedChannel := d.serial.SubscribeToSliderMoveEvents()
 		stateChangeChannel := d.serial.SubscribeToStateChangeEvent()
+		sessionCountChangeChannel := d.sessions.SubscribeToSessionCountChange()
 
 		// wait on things to happen
 		go func() {
@@ -212,6 +225,10 @@ func (d *Deej) initializeTray(onDone func()) {
 					setTooltip()
 					setValuesInfo()
 					statusInfo.SetTitle(getStatusItemTitle(d))
+
+				// session count changed
+				case <-sessionCountChangeChannel:
+					setSessionsInfo()
 
 				// quit
 				case <-quit.ClickedCh:
