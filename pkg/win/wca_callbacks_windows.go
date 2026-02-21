@@ -458,3 +458,25 @@ func NewIMMNotificationClient(callback IMMNotificationClientCallback) *IMMNotifi
 func (mmnc *IMMNotificationClient) ToWCA() *wca.IMMNotificationClient {
 	return (*wca.IMMNotificationClient)(unsafe.Pointer(mmnc))
 }
+
+// GetDevice calls IMMDeviceEnumerator::GetDevice directly via vtable,
+// working around go-wca's unimplemented stub that always returns E_NOTIMPL.
+func GetDevice(mmde *wca.IMMDeviceEnumerator, pwstrId string, ppDevice **wca.IMMDevice) error {
+	idPtr, err := syscall.UTF16PtrFromString(pwstrId)
+	if err != nil {
+		return err
+	}
+
+	hr, _, _ := syscall.SyscallN(
+		mmde.VTable().GetDevice,
+		uintptr(unsafe.Pointer(mmde)),
+		uintptr(unsafe.Pointer(idPtr)),
+		uintptr(unsafe.Pointer(ppDevice)),
+	)
+
+	if hr != 0 {
+		return ole.NewError(hr)
+	}
+
+	return nil
+}

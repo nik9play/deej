@@ -786,16 +786,9 @@ func (sf *wcaSessionFinder) deviceAddedCallback(pwstrDeviceID string) error {
 }
 
 func (sf *wcaSessionFinder) handleDeviceAdded(pwstrDeviceID string) {
-	// Find the device by enumerating all devices and matching the ID
-	// go-wca's GetDevice isn't properly implemented, so we use this workaround
-	device, err := sf.findDeviceByID(pwstrDeviceID)
-	if err != nil {
-		sf.logger.Warnw("Failed to find added device", "deviceID", pwstrDeviceID, "error", err)
-		return
-	}
-
-	if device == nil {
-		sf.logger.Debugw("Device not found in enumeration", "deviceID", pwstrDeviceID)
+	var device *wca.IMMDevice
+	if err := win.GetDevice(sf.mmDeviceEnumerator, pwstrDeviceID, &device); err != nil {
+		sf.logger.Warnw("Failed to get added device", "deviceID", pwstrDeviceID, "error", err)
 		return
 	}
 
@@ -803,44 +796,6 @@ func (sf *wcaSessionFinder) handleDeviceAdded(pwstrDeviceID string) {
 		sf.logger.Warnw("Failed to create device manager for added device", "deviceID", pwstrDeviceID, "error", err)
 		device.Release()
 	}
-}
-
-func (sf *wcaSessionFinder) findDeviceByID(targetDeviceID string) (*wca.IMMDevice, error) {
-	if sf.mmDeviceEnumerator == nil {
-		return nil, errors.New("device enumerator not initialized")
-	}
-
-	var deviceCollection *wca.IMMDeviceCollection
-	if err := sf.mmDeviceEnumerator.EnumAudioEndpoints(wca.EAll, wca.DEVICE_STATE_ACTIVE, &deviceCollection); err != nil {
-		return nil, fmt.Errorf("enumerate audio endpoints: %w", err)
-	}
-	defer deviceCollection.Release()
-
-	var deviceCount uint32
-	if err := deviceCollection.GetCount(&deviceCount); err != nil {
-		return nil, fmt.Errorf("get device count: %w", err)
-	}
-
-	for i := uint32(0); i < deviceCount; i++ {
-		var device *wca.IMMDevice
-		if err := deviceCollection.Item(i, &device); err != nil {
-			continue
-		}
-
-		var deviceID string
-		if err := device.GetId(&deviceID); err != nil {
-			device.Release()
-			continue
-		}
-
-		if deviceID == targetDeviceID {
-			return device, nil
-		}
-
-		device.Release()
-	}
-
-	return nil, nil
 }
 
 func (sf *wcaSessionFinder) deviceRemovedCallback(pwstrDeviceID string) error {
