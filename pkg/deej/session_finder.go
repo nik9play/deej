@@ -4,6 +4,9 @@ package deej
 type SessionFinder interface {
 	GetAllSessions() ([]Session, error)
 
+	// SubscribeToSessionEvents returns a channel that emits session add/remove events
+	SubscribeToSessionEvents() <-chan SessionEvent
+
 	Release() error
 }
 
@@ -23,12 +26,3 @@ const (
 	// SessionEventRemoved indicates a session was removed/disconnected
 	SessionEventRemoved
 )
-
-// EventDrivenSessionFinder is an optional interface for session finders that support
-// event-based session tracking instead of polling
-type EventDrivenSessionFinder interface {
-	SessionFinder
-
-	// SubscribeToSessionEvents returns a channel that emits session add/remove events
-	SubscribeToSessionEvents() <-chan SessionEvent
-}

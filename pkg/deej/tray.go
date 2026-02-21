@@ -62,22 +62,6 @@ func getAutostartItemText(d *Deej) (string, string) {
 	return configTitle, configDescription
 }
 
-func getRescanItemText(d *Deej) (string, string) {
-	rescanTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-		DefaultMessage: &i18n.Message{
-			ID:    "RescanSessionsTitle",
-			Other: "Re-scan audio sessions",
-		},
-	})
-	rescanDescription := d.localizer.MustLocalize(&i18n.LocalizeConfig{
-		DefaultMessage: &i18n.Message{
-			ID:    "RescanSessionsDescription",
-			Other: "Manually refresh audio sessions if something's stuck",
-		},
-	})
-
-	return rescanTitle, rescanDescription
-}
 
 func getQuitItemText(d *Deej) (string, string) {
 	quitTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
@@ -167,10 +151,6 @@ func (d *Deej) initializeTray(onDone func()) {
 			autostart.Hide()
 		}
 
-		rescanTitle, rescanDescription := getRescanItemText(d)
-		refreshSessions := systray.AddMenuItem(rescanTitle, rescanDescription)
-		refreshSessions.SetIcon(icon.RefreshSessionsIcon)
-
 		systray.AddSeparator()
 
 		statusInfo := systray.AddMenuItem(getStatusItemTitle(d), "")
@@ -252,13 +232,6 @@ func (d *Deej) initializeTray(onDone func()) {
 						autostart.Uncheck()
 					}
 
-				// refresh sessions
-				case <-refreshSessions.ClickedCh:
-					logger.Info("Refresh sessions menu item clicked, triggering session map refresh")
-
-					// performance: the reason that forcing a refresh here is okay is that users can't spam the
-					// right-click -> select-this-option sequence at a rate that's meaningful to performance
-					d.sessions.refreshSessions(true)
 				}
 			}
 		}()

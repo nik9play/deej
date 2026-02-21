@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/nik9play/deej/pkg/deej/util"
 	"github.com/thoas/go-funk"
@@ -21,11 +20,7 @@ type sessionMap struct {
 
 	sessionFinder SessionFinder
 
-	lastSessionRefresh time.Time
-	unmappedSessions   []Session
-
-	// indicates if we're using event-driven session tracking
-	eventDriven bool
+	unmappedSessions []Session
 
 	// channel for notifying about session count changes
 	sessionCountChangeChan chan struct{}
@@ -51,11 +46,6 @@ const (
 
 	// targets all currently unmapped sessions (experimental)
 	specialTargetAllUnmapped = "unmapped"
-
-	// this threshold constant assumes that re-acquiring all sessions is a kind of expensive operation,
-	// and needs to be limited in some manner. this value was previously user-configurable through a config
-	// key "process_refresh_frequency", but exposing this type of implementation detail seems wrong now
-	minTimeBetweenSessionRefreshes = time.Second * 2
 )
 
 // this matches friendly device names (on Windows), e.g. "Headphones (Realtek Audio)"
@@ -92,23 +82,7 @@ func (m *sessionMap) notifySessionCountChange() {
 
 func (m *sessionMap) initialize() error {
 	m.setupOnSliderMove()
-
-	// Check if the session finder supports event-driven tracking
-	if eventDrivenFinder, ok := m.sessionFinder.(EventDrivenSessionFinder); ok {
-		m.eventDriven = true
-		// Setup event handler first - buffered events from init will be consumed
-		m.setupOnSessionEvents(eventDrivenFinder)
-		m.logger.Info("Using event-driven session tracking")
-	} else {
-		m.setupOnConfigReload()
-		// Polling mode - get all sessions now
-		if err := m.getAndAddSessions(); err != nil {
-			m.logger.Warnw("Failed to get all sessions during session map initialization", "error", err)
-			return fmt.Errorf("get all sessions during init: %w", err)
-		}
-		m.logger.Info("Using polling-based session tracking")
-	}
-
+	m.setupOnSessionEvents(m.sessionFinder)
 	return nil
 }
 
@@ -119,48 +93,6 @@ func (m *sessionMap) release() error {
 	}
 
 	return nil
-}
-
-// assumes the session map is clean!
-// only call on a new session map or as part of refreshSessions which calls reset
-func (m *sessionMap) getAndAddSessions() error {
-
-	// mark that we're refreshing before anything else
-	m.lastSessionRefresh = time.Now()
-	m.unmappedSessions = nil
-
-	sessions, err := m.sessionFinder.GetAllSessions()
-	if err != nil {
-		m.logger.Warnw("Failed to get sessions from session finder", "error", err)
-		return fmt.Errorf("get sessions from SessionFinder: %w", err)
-	}
-
-	for _, session := range sessions {
-		m.add(session)
-
-		if !m.sessionMapped(session) {
-			m.logger.Debugw("Tracking unmapped session", "session", session)
-			m.unmappedSessions = append(m.unmappedSessions, session)
-		}
-	}
-
-	m.logger.Debugw("Got all audio sessions successfully", "sessionMap", m)
-
-	m.notifySessionCountChange()
-
-	return nil
-}
-
-func (m *sessionMap) setupOnConfigReload() {
-	configReloadedChannel := m.deej.config.SubscribeToChanges()
-
-	go func() {
-		for {
-			<-configReloadedChannel
-			m.logger.Info("Detected config reload, attempting to re-acquire all audio sessions")
-			m.refreshSessions(true) // force refresh on config reload
-		}
-	}()
 }
 
 func (m *sessionMap) setupOnSliderMove() {
@@ -174,7 +106,7 @@ func (m *sessionMap) setupOnSliderMove() {
 	}()
 }
 
-func (m *sessionMap) setupOnSessionEvents(finder EventDrivenSessionFinder) {
+func (m *sessionMap) setupOnSessionEvents(finder SessionFinder) {
 	sessionEventsChan := finder.SubscribeToSessionEvents()
 
 	go func() {
@@ -207,11 +139,11 @@ func (m *sessionMap) handleSessionAdded(event SessionEvent) {
 }
 
 func (m *sessionMap) handleSessionRemoved(event SessionEvent) {
-	m.logger.Debugw("Session removed event received", "key", event.Session.Key())
-
 	if event.Session == nil {
 		return
 	}
+
+	m.logger.Debugw("Session removed event received", "key", event.Session.Key())
 
 	// Remove from the main map
 	m.removeSession(event.Session)
@@ -251,24 +183,6 @@ func (m *sessionMap) removeSession(session Session) {
 	// Remove the key entirely if no sessions left
 	if len(m.m[key]) == 0 {
 		delete(m.m, key)
-	}
-}
-
-// performance: explain why force == true at every such use to avoid unintended forced refresh spams
-func (m *sessionMap) refreshSessions(force bool) {
-
-	// make sure enough time passed since the last refresh, unless force is true in which case always clear
-	if !force && m.lastSessionRefresh.Add(minTimeBetweenSessionRefreshes).After(time.Now()) {
-		return
-	}
-
-	// clear and release sessions first
-	m.clear()
-
-	if err := m.getAndAddSessions(); err != nil {
-		m.logger.Warnw("Failed to re-acquire all audio sessions", "error", err)
-	} else {
-		m.logger.Debug("Re-acquired sessions successfully")
 	}
 }
 
@@ -321,15 +235,11 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 		return
 	}
 
-	targetFound := false
-	adjustmentFailed := false
-
 	// for each possible target for this slider...
 	for _, target := range targets {
 
 		// handle special action targets (OBS, etc.) that don't map to audio sessions
 		if m.applySpecialTargetAction(target, event.PercentValue) {
-			targetFound = true
 			continue
 		}
 
@@ -348,32 +258,15 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 				continue
 			}
 
-			targetFound = true
-
 			// iterate all matching sessions and adjust the volume of each one
 			for _, session := range sessions {
 				if session.GetVolume() != event.PercentValue {
 					if err := session.SetVolume(event.PercentValue); err != nil {
 						m.logger.Warnw("Failed to set target session volume", "error", err)
-						adjustmentFailed = true
 					}
 				}
 			}
 		}
-	}
-
-	// if we still haven't found a target or the volume adjustment failed, maybe look for the target again.
-	// processes could've opened since the last time this slider moved.
-	// if they haven't, the cooldown will take care to not spam it up
-	// Note: In event-driven mode, we don't refresh on target not found since events handle new sessions
-	if !targetFound && !m.eventDriven {
-		m.refreshSessions(false)
-	} else if adjustmentFailed {
-
-		// performance: the reason that forcing a refresh here is okay is that we'll only get here
-		// when a session's SetVolume call errored, such as in the case of a stale master session
-		// (or another, more catastrophic failure happens)
-		m.refreshSessions(true)
 	}
 }
 
@@ -481,40 +374,18 @@ func (m *sessionMap) get(key string) ([]Session, bool) {
 	return value, ok
 }
 
-func (m *sessionMap) clear() {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	m.logger.Debug("Releasing and clearing all audio sessions")
-
-	// Don't release sessions in event-driven mode - the session finder manages their lifecycle
-	if !m.eventDriven {
-		for _, sessions := range m.m {
-			for _, session := range sessions {
-				session.Release()
-			}
-		}
-	}
-
-	// Clear the map
-	m.m = make(map[string][]Session)
-
-	m.logger.Debug("Session map cleared")
-}
-
-func (m *sessionMap) String() string {
-	return fmt.Sprintf("<%d audio sessions>", m.getSessionCount())
-}
-
 func (m *sessionMap) getSessionCount() int {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	sessionCount := 0
-
-	for _, value := range m.m {
-		sessionCount += len(value)
+	count := 0
+	for _, sessions := range m.m {
+		count += len(sessions)
 	}
 
-	return sessionCount
+	return count
+}
+
+func (m *sessionMap) String() string {
+	return fmt.Sprintf("<%d audio sessions>", m.getSessionCount())
 }
