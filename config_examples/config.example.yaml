@@ -6,6 +6,7 @@
 # windows only - you can use 'deej.current.fullscreen' to control the currently active full-screen app
 # windows only - you can use a device's full name, i.e. "Speakers (Realtek High Definition Audio)", to bind it. this works for both output and input devices
 # windows only - you can use 'system' to control the "system sounds" volume
+# you can use 'deej.obs:<input name>' to control OBS audio sources (requires obs.enabled: true)
 # important: slider indexes start at 0, regardless of which analog pins you're using!
 slider_mapping:
   0: firefox.exe
@@ -32,3 +33,12 @@ noise_reduction: default
 
 # select language. Available options: auto, ru, en
 language: auto
+
+# OBS WebSocket integration (optional)
+# control OBS audio sources using 'deej.obs:<input name>' in slider_mapping
+# input names must match exactly as shown in OBS (e.g., "Mic/Aux", "Desktop Audio")
+obs:
+  enabled: false
+  host: localhost
+  port: 4455
+  password: ""

@@ -40,6 +40,9 @@ const (
 	// this prefix identifies those targets to ensure they don't contradict with another similarly-named process
 	specialTargetTransformPrefix = "deej."
 
+	// obs targets are handled directly via OBS WebSocket API
+	obsTargetPrefix = "deej.obs:"
+
 	// targets the currently active window (Windows-only, experimental)
 	specialTargetCurrentWindow = "current"
 
@@ -324,6 +327,12 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 	// for each possible target for this slider...
 	for _, target := range targets {
 
+		// handle special action targets (OBS, etc.) that don't map to audio sessions
+		if m.applySpecialTargetAction(target, event.PercentValue) {
+			targetFound = true
+			continue
+		}
+
 		// resolve the target name by cleaning it up and applying any special transformations.
 		// depending on the transformation applied, this can result in more than one target name
 		resolvedTargets := m.resolveTarget(target)
@@ -365,6 +374,30 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 		// when a session's SetVolume call errored, such as in the case of a stale master session
 		// (or another, more catastrophic failure happens)
 		m.refreshSessions(true)
+	}
+}
+
+// applySpecialTargetAction handles targets that control external systems rather than audio sessions
+// (e.g. OBS, and potentially Discord or others in the future).
+// Returns true if the target was handled, false if it should be treated as a normal audio target.
+func (m *sessionMap) applySpecialTargetAction(target string, volume float32) bool {
+	switch {
+	case strings.HasPrefix(strings.ToLower(target), obsTargetPrefix):
+		inputName := target[len(obsTargetPrefix):]
+		m.handleOBSTarget(inputName, volume)
+		return true
+	}
+
+	return false
+}
+
+func (m *sessionMap) handleOBSTarget(inputName string, volume float32) {
+	if m.deej.obs == nil || !m.deej.obs.IsConnected() {
+		return
+	}
+
+	if err := m.deej.obs.SetInputVolume(inputName, volume); err != nil {
+		m.logger.Debugw("Failed to set OBS input volume", "input", inputName, "error", err)
 	}
 }
 
