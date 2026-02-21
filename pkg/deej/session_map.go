@@ -230,10 +230,8 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 	// for each possible target for this slider...
 	for _, target := range targets {
 
-		// handle OBS targets directly via WebSocket API
-		if m.isOBSTarget(target) {
-			inputName := target[len(obsTargetPrefix):]
-			m.handleOBSTarget(inputName, event.PercentValue)
+		// handle special action targets (OBS, etc.) that don't map to audio sessions
+		if m.applySpecialTargetAction(target, event.PercentValue) {
 			targetFound = true
 			continue
 		}
@@ -281,8 +279,18 @@ func (m *sessionMap) handleSliderMoveEvent(event SliderMoveEvent) {
 	}
 }
 
-func (m *sessionMap) isOBSTarget(target string) bool {
-	return strings.HasPrefix(strings.ToLower(target), obsTargetPrefix)
+// applySpecialTargetAction handles targets that control external systems rather than audio sessions
+// (e.g. OBS, and potentially Discord or others in the future).
+// Returns true if the target was handled, false if it should be treated as a normal audio target.
+func (m *sessionMap) applySpecialTargetAction(target string, volume float32) bool {
+	switch {
+	case strings.HasPrefix(strings.ToLower(target), obsTargetPrefix):
+		inputName := target[len(obsTargetPrefix):]
+		m.handleOBSTarget(inputName, volume)
+		return true
+	}
+
+	return false
 }
 
 func (m *sessionMap) handleOBSTarget(inputName string, volume float32) {
