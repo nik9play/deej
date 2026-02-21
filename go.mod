@@ -2,8 +2,6 @@ module github.com/nik9play/deej
 
 go 1.23.4
 
-toolchain go1.23.8
-
 require (
 	fyne.io/systray v1.11.0
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3
