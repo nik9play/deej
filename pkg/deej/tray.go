@@ -115,7 +115,17 @@ func getValuesString(d *Deej) string {
 
 func getSessionsCountString(d *Deej) string {
 	count := d.sessions.getSessionCount()
-	return strconv.Itoa(count) + " audio sessions"
+	return d.localizer.MustLocalize(&i18n.LocalizeConfig{
+		DefaultMessage: &i18n.Message{
+			ID:    "AudioSessionsCount",
+			One:   "{{.Count}} audio session",
+			Other: "{{.Count}} audio sessions",
+		},
+		TemplateData: map[string]interface{}{
+			"Count": count,
+		},
+		PluralCount: count,
+	})
 }
 
 func (d *Deej) initializeTray(onDone func()) {

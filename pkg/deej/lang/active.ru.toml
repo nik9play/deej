@@ -1,3 +1,10 @@
+[AudioSessionsCount]
+few = "{{.Count}} аудиосессии"
+hash = "sha1-1307ad3bc6346b5b56d9de160a85e5f016339abb"
+many = "{{.Count}} аудиосессий"
+one = "{{.Count}} аудиосессия"
+other = "{{.Count}} аудиосессий"
+
 [AutostartDescription]
 hash = "sha1-ac5651a689fdde61786dd985297960f2dae72325"
 other = "Запускать deej вместе с системой"
@@ -69,14 +76,6 @@ other = "Остановить deej и выйти"
 [QuitTitle]
 hash = "sha1-1a2285d8881f226e13430515a9dd2b9fb6294200"
 other = "Выйти"
-
-[RescanSessionsDescription]
-hash = "sha1-3d8a2e429c29a75c484ebb38cf3d70ecf0906bd7"
-other = "Обновление аудиосессий, если что-то пошло не так"
-
-[RescanSessionsTitle]
-hash = "sha1-7210421850570f6f4636552699ec2594b50bd21a"
-other = "Обновить аудиосессии"
 
 [SettingsDescription]
 hash = "sha1-c7f73bb54d928922c3838bb789ee9fb8a5b1eb37"
