@@ -30,6 +30,10 @@ type wcaSessionFinder struct {
 	mmNotificationClient    *win.IMMNotificationClient
 	lastDefaultDeviceChange time.Time
 
+	// workChan receives functions from IMMNotificationClient callbacks to be executed
+	// on the worker goroutine (which owns the COM apartment)
+	workChan chan func()
+
 	mu sync.RWMutex
 
 	// our master input and output sessions
@@ -86,6 +90,9 @@ const (
 
 	// buffer size for session event channel
 	sessionEventChanSize = 100
+
+	// buffer size for the device work channel
+	deviceWorkChanSize = 50
 )
 
 func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
@@ -98,6 +105,7 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 		deviceManagers:   make(map[string]*deviceSessionManager),
 		trackedSessions:  make(map[string]*trackedSession),
 		sessionEventChan: make(chan SessionEvent, sessionEventChanSize),
+		workChan:         make(chan func(), deviceWorkChanSize),
 		ready:            make(chan struct{}),
 		workerCtx:        ctx,
 		workerCancel:     cancel,
@@ -203,9 +211,17 @@ func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
 
 	sf.logger.Debug("Event-driven session finder initialized")
 
-	<-ctx.Done()
-	sf.logger.Info("Session finder worker stopping")
-	sf.cleanup()
+	// Process work dispatched from IMMNotificationClient callbacks.
+	for {
+		select {
+		case <-ctx.Done():
+			sf.logger.Info("Session finder worker stopping")
+			sf.cleanup()
+			return
+		case work := <-sf.workChan:
+			work()
+		}
+	}
 }
 
 func (sf *wcaSessionFinder) initializeDeviceEnumerator() error {
@@ -277,6 +293,15 @@ func (sf *wcaSessionFinder) emitSessionEvent(event SessionEvent) {
 	case sf.sessionEventChan <- event:
 	default:
 		sf.logger.Warnw("Session event channel full, dropping event", "type", event.Type, "sessionID", event.SessionID)
+	}
+}
+
+// dispatchWork sends fn to the worker goroutine for execution on the COM-initialized thread.
+func (sf *wcaSessionFinder) dispatchWork(fn func()) {
+	select {
+	case sf.workChan <- fn:
+	default:
+		sf.logger.Warn("Device work channel full, dropping device event")
 	}
 }
 
@@ -396,10 +421,12 @@ func (sf *wcaSessionFinder) onSessionCreated(deviceID string, newSession *wca.IA
 	// AddRef because Windows will release the passed reference after callback returns
 	newSession.AddRef()
 
-	if err := sf.addSessionFromControl(deviceID, newSession); err != nil {
-		sf.logger.Debugw("Failed to add new session", "deviceID", deviceID, "error", err)
-		newSession.Release()
-	}
+	sf.dispatchWork(func() {
+		if err := sf.addSessionFromControl(deviceID, newSession); err != nil {
+			sf.logger.Debugw("Failed to add new session", "deviceID", deviceID, "error", err)
+			newSession.Release()
+		}
+	})
 
 	return nil
 }
@@ -453,13 +480,13 @@ func (sf *wcaSessionFinder) addSessionFromControl(deviceID string, audioSessionC
 		OnStateChanged: func(newState uint32) error {
 			if newState == wca.AudioSessionStateExpired {
 				sf.logger.Debugw("Session state changed to expired", "sessionID", sessionID)
-				sf.removeSession(sessionID)
+				sf.dispatchWork(func() { sf.removeSession(sessionID) })
 			}
 			return nil
 		},
 		OnSessionDisconnected: func(disconnectReason uint32) error {
 			sf.logger.Debugw("Session disconnected", "sessionID", sessionID, "reason", disconnectReason)
-			sf.removeSession(sessionID)
+			sf.dispatchWork(func() { sf.removeSession(sessionID) })
 			return nil
 		},
 	}
@@ -689,15 +716,17 @@ func (sf *wcaSessionFinder) defaultDeviceChangedCallback(
 
 	sf.logger.Debugw("Default audio device changed", "flow", flow, "role", role, "deviceID", pwstrDeviceID)
 
-	// Handle output device change
-	if flow == wca.ERender || flow == wca.EAll {
-		sf.refreshMasterOutput()
-	}
+	sf.dispatchWork(func() {
+		// Handle output device change
+		if flow == wca.ERender || flow == wca.EAll {
+			sf.refreshMasterOutput()
+		}
 
-	// Handle input device change
-	if flow == wca.ECapture || flow == wca.EAll {
-		sf.refreshMasterInput()
-	}
+		// Handle input device change
+		if flow == wca.ECapture || flow == wca.EAll {
+			sf.refreshMasterInput()
+		}
+	})
 
 	return nil
 }
@@ -780,8 +809,9 @@ func (sf *wcaSessionFinder) refreshMasterInput() {
 
 func (sf *wcaSessionFinder) deviceAddedCallback(pwstrDeviceID string) error {
 	sf.logger.Debugw("Device added", "deviceID", pwstrDeviceID)
-	sf.handleDeviceAdded(pwstrDeviceID)
-
+	sf.dispatchWork(func() {
+		sf.handleDeviceAdded(pwstrDeviceID)
+	})
 	return nil
 }
 
@@ -800,19 +830,22 @@ func (sf *wcaSessionFinder) handleDeviceAdded(pwstrDeviceID string) {
 
 func (sf *wcaSessionFinder) deviceRemovedCallback(pwstrDeviceID string) error {
 	sf.logger.Debugw("Device removed", "deviceID", pwstrDeviceID)
-	sf.removeDeviceManager(pwstrDeviceID)
-
+	sf.dispatchWork(func() {
+		sf.removeDeviceManager(pwstrDeviceID)
+	})
 	return nil
 }
 
 func (sf *wcaSessionFinder) deviceStateChangedCallback(pwstrDeviceID string, dwNewState uint32) error {
 	sf.logger.Debugw("Device state changed", "deviceID", pwstrDeviceID, "newState", dwNewState)
 
-	if dwNewState == wca.DEVICE_STATE_ACTIVE {
-		sf.handleDeviceAdded(pwstrDeviceID)
-	} else {
-		sf.removeDeviceManager(pwstrDeviceID)
-	}
+	sf.dispatchWork(func() {
+		if dwNewState == wca.DEVICE_STATE_ACTIVE {
+			sf.handleDeviceAdded(pwstrDeviceID)
+		} else {
+			sf.removeDeviceManager(pwstrDeviceID)
+		}
+	})
 
 	return nil
 }
