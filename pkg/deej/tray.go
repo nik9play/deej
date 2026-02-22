@@ -62,7 +62,6 @@ func getAutostartItemText(d *Deej) (string, string) {
 	return configTitle, configDescription
 }
 
-
 func getQuitItemText(d *Deej) (string, string) {
 	quitTitle := d.localizer.MustLocalize(&i18n.LocalizeConfig{
 		DefaultMessage: &i18n.Message{
@@ -136,9 +135,14 @@ func (d *Deej) initializeTray(onDone func()) {
 
 		systray.SetTemplateIcon(icon.TrayDeejLogo, icon.TrayDeejLogo)
 
-		systray.SetTitle("deej")
+		systray.SetTooltip("deej")
 
 		setTooltip := func() {
+			// TODO: remove when library supports changing tooltip on linux after initial set
+			if util.Linux() {
+				return
+			}
+
 			title := "deej\n" + getStatusItemTitle(d)
 			if d.serial.GetState() {
 				title += "\n" + getValuesString(d)
@@ -247,7 +251,7 @@ func (d *Deej) initializeTray(onDone func()) {
 		}()
 
 		// actually start the main runtime
-		onDone()
+		go onDone()
 	}
 
 	onExit := func() {
