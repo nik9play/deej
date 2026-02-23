@@ -212,15 +212,7 @@ func (sio *SerialIO) setupOnConfigReload() {
 		for {
 			<-configReloadedChannel
 
-			// make any config reload unset our slider number to ensure process volumes are being re-set
-			// (the next read line will emit SliderMoveEvent instances for all sliders)\
-			// this needs to happen after a small delay, because the session map will also re-acquire sessions
-			// whenever the config file is reloaded, and we don't want it to receive these move events while the map
-			// is still cleared. this is kind of ugly, but shouldn't cause any issues
-			go func() {
-				time.Sleep(50 * time.Millisecond)
-				sio.lastKnownNumSliders = 0
-			}()
+			sio.lastKnownNumSliders = 0
 
 			// if connection params have changed, attempt to stop and start the connection
 			if sio.deej.config.ConnectionInfo.COMPort != sio.comPortConfig ||
