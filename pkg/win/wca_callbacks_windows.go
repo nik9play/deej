@@ -185,26 +185,45 @@ func aseOnSessionDisconnected(this uintptr, disconnectReason uintptr) int64 {
 	return ole.S_OK
 }
 
+// Shared vtables — syscall.NewCallback has a process-lifetime limit of 2048 calls,
+// so each vtable is allocated once and reused across all instances of that type.
+var (
+	aseVTable  iAudioSessionEventsVtbl
+	asnVTable  iAudioSessionNotificationVtbl
+	mmncVTable iMMNotificationClientVtbl
+)
+
+func init() {
+	aseVTable.QueryInterface = syscall.NewCallback(aseQueryInterface)
+	aseVTable.AddRef = syscall.NewCallback(aseAddRef)
+	aseVTable.Release = syscall.NewCallback(aseRelease)
+	aseVTable.OnDisplayNameChanged = syscall.NewCallback(aseOnDisplayNameChanged)
+	aseVTable.OnIconPathChanged = syscall.NewCallback(aseOnIconPathChanged)
+	aseVTable.OnSimpleVolumeChanged = syscall.NewCallback(aseOnSimpleVolumeChanged)
+	aseVTable.OnChannelVolumeChanged = syscall.NewCallback(aseOnChannelVolumeChanged)
+	aseVTable.OnGroupingParamChanged = syscall.NewCallback(aseOnGroupingParamChanged)
+	aseVTable.OnStateChanged = syscall.NewCallback(aseOnStateChanged)
+	aseVTable.OnSessionDisconnected = syscall.NewCallback(aseOnSessionDisconnected)
+
+	asnVTable.QueryInterface = syscall.NewCallback(asnQueryInterface)
+	asnVTable.AddRef = syscall.NewCallback(asnAddRef)
+	asnVTable.Release = syscall.NewCallback(asnRelease)
+	asnVTable.OnSessionCreated = syscall.NewCallback(asnOnSessionCreated)
+
+	mmncVTable.QueryInterface = syscall.NewCallback(mmncQueryInterface)
+	mmncVTable.AddRef = syscall.NewCallback(mmncAddRef)
+	mmncVTable.Release = syscall.NewCallback(mmncRelease)
+	mmncVTable.OnDeviceStateChanged = syscall.NewCallback(mmncOnDeviceStateChanged)
+	mmncVTable.OnDeviceAdded = syscall.NewCallback(mmncOnDeviceAdded)
+	mmncVTable.OnDeviceRemoved = syscall.NewCallback(mmncOnDeviceRemoved)
+	mmncVTable.OnDefaultDeviceChanged = syscall.NewCallback(mmncOnDefaultDeviceChanged)
+	mmncVTable.OnPropertyValueChanged = syscall.NewCallback(mmncOnPropertyValueChanged)
+}
+
 // NewIAudioSessionEvents creates a new IAudioSessionEvents callback interface
 func NewIAudioSessionEvents(callback IAudioSessionEventsCallback) *IAudioSessionEvents {
-	vTable := &iAudioSessionEventsVtbl{}
-
-	// IUnknown methods
-	vTable.QueryInterface = syscall.NewCallback(aseQueryInterface)
-	vTable.AddRef = syscall.NewCallback(aseAddRef)
-	vTable.Release = syscall.NewCallback(aseRelease)
-
-	// IAudioSessionEvents methods
-	vTable.OnDisplayNameChanged = syscall.NewCallback(aseOnDisplayNameChanged)
-	vTable.OnIconPathChanged = syscall.NewCallback(aseOnIconPathChanged)
-	vTable.OnSimpleVolumeChanged = syscall.NewCallback(aseOnSimpleVolumeChanged)
-	vTable.OnChannelVolumeChanged = syscall.NewCallback(aseOnChannelVolumeChanged)
-	vTable.OnGroupingParamChanged = syscall.NewCallback(aseOnGroupingParamChanged)
-	vTable.OnStateChanged = syscall.NewCallback(aseOnStateChanged)
-	vTable.OnSessionDisconnected = syscall.NewCallback(aseOnSessionDisconnected)
-
 	ase := &IAudioSessionEvents{}
-	ase.vTable = vTable
+	ase.vTable = &aseVTable
 	ase.callback = callback
 
 	return ase
@@ -275,18 +294,8 @@ func asnOnSessionCreated(this uintptr, newSession uintptr) int64 {
 
 // NewIAudioSessionNotification creates a new IAudioSessionNotification callback interface
 func NewIAudioSessionNotification(callback IAudioSessionNotificationCallback) *IAudioSessionNotification {
-	vTable := &iAudioSessionNotificationVtbl{}
-
-	// IUnknown methods
-	vTable.QueryInterface = syscall.NewCallback(asnQueryInterface)
-	vTable.AddRef = syscall.NewCallback(asnAddRef)
-	vTable.Release = syscall.NewCallback(asnRelease)
-
-	// IAudioSessionNotification methods
-	vTable.OnSessionCreated = syscall.NewCallback(asnOnSessionCreated)
-
 	asn := &IAudioSessionNotification{}
-	asn.vTable = vTable
+	asn.vTable = &asnVTable
 	asn.callback = callback
 
 	return asn
@@ -433,22 +442,8 @@ func mmncOnPropertyValueChanged(this uintptr, pwstrDeviceId uintptr, key uintptr
 // NewIMMNotificationClient creates a new IMMNotificationClient callback interface
 // This is a fixed version that correctly passes dwNewState in OnDeviceStateChanged
 func NewIMMNotificationClient(callback IMMNotificationClientCallback) *IMMNotificationClient {
-	vTable := &iMMNotificationClientVtbl{}
-
-	// IUnknown methods
-	vTable.QueryInterface = syscall.NewCallback(mmncQueryInterface)
-	vTable.AddRef = syscall.NewCallback(mmncAddRef)
-	vTable.Release = syscall.NewCallback(mmncRelease)
-
-	// IMMNotificationClient methods
-	vTable.OnDeviceStateChanged = syscall.NewCallback(mmncOnDeviceStateChanged)
-	vTable.OnDeviceAdded = syscall.NewCallback(mmncOnDeviceAdded)
-	vTable.OnDeviceRemoved = syscall.NewCallback(mmncOnDeviceRemoved)
-	vTable.OnDefaultDeviceChanged = syscall.NewCallback(mmncOnDefaultDeviceChanged)
-	vTable.OnPropertyValueChanged = syscall.NewCallback(mmncOnPropertyValueChanged)
-
 	mmnc := &IMMNotificationClient{}
-	mmnc.vTable = vTable
+	mmnc.vTable = &mmncVTable
 	mmnc.callback = callback
 
 	return mmnc
