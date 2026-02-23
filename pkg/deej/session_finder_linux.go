@@ -513,29 +513,6 @@ func (sf *paSessionFinder) emitEvent(event SessionEvent) {
 	}
 }
 
-func (sf *paSessionFinder) GetAllSessions() ([]Session, error) {
-	sf.mu.RLock()
-	defer sf.mu.RUnlock()
-
-	sessions := make([]Session, 0, 2+len(sf.sinkInputs)+len(sf.namedSinks)+len(sf.namedSources))
-	if sf.masterSink != nil {
-		sessions = append(sessions, sf.masterSink)
-	}
-	if sf.masterSource != nil {
-		sessions = append(sessions, sf.masterSource)
-	}
-	for _, s := range sf.sinkInputs {
-		sessions = append(sessions, s)
-	}
-	for _, s := range sf.namedSinks {
-		sessions = append(sessions, s)
-	}
-	for _, s := range sf.namedSources {
-		sessions = append(sessions, s)
-	}
-	return sessions, nil
-}
-
 func (sf *paSessionFinder) SubscribeToSessionEvents() <-chan SessionEvent {
 	return sf.sessionEvents
 }

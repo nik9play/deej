@@ -51,11 +51,6 @@ type wcaSessionFinder struct {
 	// event channels
 	sessionEventChan chan SessionEvent
 
-	// ready channel - closed when initialization is complete
-	ready    chan struct{}
-	initErr  error
-	initOnce sync.Once
-
 	workerCtx    context.Context
 	workerCancel context.CancelFunc
 }
@@ -106,7 +101,6 @@ func newSessionFinder(logger *zap.SugaredLogger) (SessionFinder, error) {
 		trackedSessions:  make(map[string]*trackedSession),
 		sessionEventChan: make(chan SessionEvent, sessionEventChanSize),
 		workChan:         make(chan func(), deviceWorkChanSize),
-		ready:            make(chan struct{}),
 		workerCtx:        ctx,
 		workerCancel:     cancel,
 	}
@@ -177,16 +171,7 @@ func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	// Helper to signal initialization complete (success or failure)
-	signalReady := func(err error) {
-		sf.initOnce.Do(func() {
-			sf.initErr = err
-			close(sf.ready)
-		})
-	}
-
 	if err := sf.initializeCOMLoop(ctx); err != nil {
-		signalReady(fmt.Errorf("COM initialization failed: %w", err))
 		return
 	}
 	sf.logger.Info("COM initialized for session finder")
@@ -195,7 +180,6 @@ func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
 	// Initialize device enumerator and register for device notifications
 	if err := sf.initializeDeviceEnumerator(); err != nil {
 		sf.logger.Errorw("Failed to initialize device enumerator", "error", err)
-		signalReady(fmt.Errorf("device enumerator initialization failed: %w", err))
 		return
 	}
 	// Initialize all device managers and register for session notifications
@@ -205,9 +189,6 @@ func (sf *wcaSessionFinder) sessionFinderWorker(ctx context.Context) {
 
 	// Initialize master sessions
 	sf.initializeMasterSessions()
-
-	// Signal that initialization is complete
-	signalReady(nil)
 
 	sf.logger.Debug("Event-driven session finder initialized")
 
@@ -604,49 +585,6 @@ func (sf *wcaSessionFinder) cleanup() {
 	if sf.mmDeviceEnumerator != nil {
 		sf.mmDeviceEnumerator.Release()
 	}
-}
-
-// GetAllSessions returns all currently tracked sessions
-// This is called once at startup to get the initial session list
-func (sf *wcaSessionFinder) GetAllSessions() ([]Session, error) {
-	// Wait for initialization to complete
-	<-sf.ready
-	if sf.initErr != nil {
-		return nil, sf.initErr
-	}
-
-	return sf.getAllSessionsInternal()
-}
-
-// getAllSessionsInternal returns all currently tracked sessions
-func (sf *wcaSessionFinder) getAllSessionsInternal() ([]Session, error) {
-	sf.mu.RLock()
-	defer sf.mu.RUnlock()
-
-	sessions := []Session{}
-
-	// Add master sessions
-	if sf.masterOut != nil {
-		sessions = append(sessions, sf.masterOut)
-	}
-
-	if sf.masterIn != nil {
-		sessions = append(sessions, sf.masterIn)
-	}
-
-	// Add device master sessions
-	for _, dm := range sf.deviceManagers {
-		if dm.masterSession != nil {
-			sessions = append(sessions, dm.masterSession)
-		}
-	}
-
-	// Add all tracked process sessions
-	for _, tracked := range sf.trackedSessions {
-		sessions = append(sessions, tracked.session)
-	}
-
-	return sessions, nil
 }
 
 func (sf *wcaSessionFinder) createDeviceMasterSession(device *wca.IMMDevice) (*masterSession, error) {
