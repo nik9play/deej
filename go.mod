@@ -3,7 +3,7 @@ module github.com/nik9play/deej
 go 1.25.0
 
 require (
-	fyne.io/systray v1.12.0
+	fyne.io/systray v1.12.1-0.20260224174210-614d12c91a50
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3
 	github.com/andreykaipov/goobs v1.7.1
 	github.com/fsnotify/fsnotify v1.9.0

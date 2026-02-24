@@ -138,11 +138,6 @@ func (d *Deej) initializeTray(onDone func()) {
 		systray.SetTooltip("deej")
 
 		setTooltip := func() {
-			// TODO: remove when library supports changing tooltip on linux after initial set
-			if util.Linux() {
-				return
-			}
-
 			title := "deej\n" + getStatusItemTitle(d)
 			if d.serial.GetState() {
 				title += "\n" + getValuesString(d)
