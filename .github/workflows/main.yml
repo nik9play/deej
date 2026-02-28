@@ -8,22 +8,22 @@ on:
 
 jobs:
   build:
-    name: Build
+    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
-        mode: [release, dev]
-        go: ["1.25.7"]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          go-version: "1.25.7"
 
       - name: Install prerequisites (Linux)
         if: runner.os == 'Linux'
@@ -31,15 +31,29 @@ jobs:
 
       - name: Build deej (Windows)
         if: runner.os == 'Windows'
-        run: scripts/windows/build-${{ matrix.mode }}.bat
+        run: scripts/windows/build-all.bat
         shell: cmd
 
       - name: Build deej (Linux)
         if: runner.os == 'Linux'
-        run: scripts/linux/build-${{ matrix.mode }}.sh
+        run: scripts/linux/build-all.sh
 
-      - name: Upload build
+      - name: Create installer (Windows)
+        if: runner.os == 'Windows'
+        run: scripts/windows/make-installer.bat
+        shell: cmd
+
+      - name: Create zip archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path build\deej-dev.exe, build\deej-release.exe -DestinationPath build\deej-windows.zip
+
+      - name: Create tar.gz archive (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf build/deej-linux.tar.gz -C build deej-dev deej-release
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deej-${{ matrix.mode }}-${{ runner.os }}
+          name: deej-${{ runner.os }}
           path: build/
