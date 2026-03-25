@@ -555,9 +555,8 @@ func (sf *wcaSessionFinder) removeDeviceManager(deviceID string) {
 		}
 	}
 
-	sf.emitSessionEvent(SessionEvent{Type: SessionEventRemoved, Session: dm.masterSession, SessionID: "device_" + deviceID})
-
 	if dm.masterSession != nil {
+		sf.emitSessionEvent(SessionEvent{Type: SessionEventRemoved, Session: dm.masterSession, SessionID: "device_" + deviceID})
 		dm.masterSession.Release()
 	}
 	if dm.sessionManager != nil {
